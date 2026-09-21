@@ -122,6 +122,10 @@ describeDatabase("Booking API com PostgreSQL", () => {
       expect.objectContaining({ slug: "pergunta-direta", priceCents: 4_900, fulfillmentType: "async", availableModalities: ["message"] }),
       expect.objectContaining({ slug: "amor-relacoes", priceCents: 12_900, fulfillmentType: "scheduled" }),
     ]));
+
+    await prisma.service.update({ where: { slug: "pergunta-direta" }, data: { active: false } });
+    const activeOnly = await app.inject({ method: "GET", url: "/api/services" });
+    expect(activeOnly.json().map((service: { slug: string }) => service.slug)).not.toContain("pergunta-direta");
   });
 
   it("CT01 cria scheduled válido como PENDING_PAYMENT", async () => {
@@ -139,7 +143,7 @@ describeDatabase("Booking API com PostgreSQL", () => {
     });
   });
 
-  it("CT02 cria async sem slot e com UTM opcional", async () => {
+  it("CT02/CT18 cria async sem slot e com UTM opcional", async () => {
     const response = await postBooking(asyncPayload, "ct02-async-key");
     expect(response.statusCode).toBe(201);
     expect(response.json()).toMatchObject({
@@ -223,11 +227,12 @@ describeDatabase("Booking API com PostgreSQL", () => {
   });
 
   it("CT12 repete a mesma operação sem duplicar booking", async () => {
-    const first = await postBooking(scheduledPayload, "ct12-same-key");
-    const second = await postBooking(scheduledPayload, "ct12-same-key");
-    expect(first.statusCode).toBe(201);
-    expect(second.statusCode).toBe(200);
-    expect(second.headers["idempotency-replayed"]).toBe("true");
+    const [first, second] = await Promise.all([
+      postBooking(scheduledPayload, "ct12-same-key"),
+      postBooking(scheduledPayload, "ct12-same-key"),
+    ]);
+    expect([first.statusCode, second.statusCode].sort()).toEqual([200, 201]);
+    expect([first.headers["idempotency-replayed"], second.headers["idempotency-replayed"]]).toContain("true");
     expect(second.json().publicCode).toBe(first.json().publicCode);
     expect(await prisma.booking.count()).toBe(1);
   });
