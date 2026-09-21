@@ -29,6 +29,12 @@ export class BookingService {
 
   async create(payload: CreateBookingPayload, idempotencyKey: string) {
     const now = this.clock();
+    const idempotencyHash = createPayloadHash(payload);
+    const existing = await this.bookings.findByIdempotencyKey(idempotencyKey);
+    if (existing) {
+      if (existing.idempotencyHash !== idempotencyHash) throw errors.idempotencyConflict();
+      return { booking: toPublicBooking(existing), replayed: true };
+    }
     const service = await this.catalog.requireService(payload.serviceSlug);
     const modality = toDomainModality(payload.modality);
     if (!service.modalities.includes(modality)) throw errors.invalidModality();
@@ -84,7 +90,7 @@ export class BookingService {
       privacyVersion: this.config.privacyVersion,
       termsAcceptedAt: now,
       idempotencyKey,
-      idempotencyHash: createPayloadHash(payload),
+      idempotencyHash,
       reservation,
     }, now);
 

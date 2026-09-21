@@ -48,5 +48,6 @@ export type AtomicBookingResult = { booking: BookingRecord; replayed: boolean };
 
 export interface BookingRepository {
   createAtomic(input: AtomicBookingInput, now: Date): Promise<AtomicBookingResult>;
+  findByIdempotencyKey(idempotencyKey: string): Promise<BookingRecord | null>;
   findByPublicCode(publicCode: string, now: Date): Promise<BookingRecord | null>;
 }

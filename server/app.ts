@@ -43,13 +43,21 @@ export async function buildApp(options: BuildAppOptions = {}) {
     }),
     bodyLimit: 32 * 1024,
     requestIdHeader: "x-request-id",
+    ajv: { customOptions: { removeAdditional: false } },
   });
+
+  registerErrorHandler(app);
 
   await app.register(helmet);
   await app.register(cors, {
     origin: (origin, callback) => callback(null, !origin || origin === config.frontendOrigin),
   });
-  await app.register(rateLimit, { global: true, max: 100, timeWindow: "1 minute" });
+  await app.register(rateLimit, {
+    global: true,
+    max: 100,
+    timeWindow: "1 minute",
+    allowList: config.nodeEnv === "test" ? () => true : undefined,
+  });
   await app.register(swagger, {
     openapi: {
       info: { title: "Celeste Booking API", version: "1.0.0" },
@@ -80,7 +88,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(serviceRoutes(catalog), { prefix: "/api" });
   await app.register(availabilityRoutes(availability), { prefix: "/api" });
   await app.register(bookingRoutes(bookings), { prefix: "/api" });
-  registerErrorHandler(app);
 
   if (ownsPrisma) app.addHook("onClose", async () => prisma.$disconnect());
   return app;

@@ -98,7 +98,7 @@ export class PrismaBookingRepository implements BookingRepository {
         include: bookingInclude,
       });
       return { booking: mapBooking(booking), replayed: false };
-    });
+    }, { maxWait: 5_000, timeout: 15_000 });
   }
 
   async findByPublicCode(publicCode: string, now: Date) {
@@ -107,6 +107,11 @@ export class PrismaBookingRepository implements BookingRepository {
       data: { status: BookingStatus.EXPIRED, paymentStatus: PaymentStatus.EXPIRED },
     });
     const booking = await this.prisma.booking.findUnique({ where: { publicCode }, include: bookingInclude });
+    return booking ? mapBooking(booking) : null;
+  }
+
+  async findByIdempotencyKey(idempotencyKey: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { idempotencyKey }, include: bookingInclude });
     return booking ? mapBooking(booking) : null;
   }
 }
