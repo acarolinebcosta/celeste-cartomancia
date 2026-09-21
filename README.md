@@ -1,260 +1,335 @@
 # Celeste Cartomancia
 
-Frontend editorial da Celeste para apresentação das leituras e demonstração dos fluxos de atendimento. Esta fase mantém o produto deliberadamente frontend-only e prepara contratos estáveis para a integração futura com backend, disponibilidade real e pagamentos.
+Aplicação editorial da Celeste com frontend React e o primeiro núcleo backend real de catálogo, disponibilidade e pré-reservas. O backend é autoridade para serviço, preço, modalidade, agenda e estado do booking; pagamentos continuam deliberadamente demonstrativos.
 
-> O conteúdo jurídico, o domínio de produção e os dados públicos de contato ainda precisam ser definidos e revisados antes da publicação.
-
-## Visão geral
-
-A aplicação contempla:
-
-- catálogo tipado de leituras;
-- detalhes derivados do domínio, sem regras baseadas em texto de apresentação;
-- fluxo agendado para atendimentos ao vivo;
-- fluxo assíncrono para Pergunta Direta;
-- validação com React Hook Form e Zod;
-- disponibilidade, booking e checkout demonstrativos atrás de interfaces de serviço;
-- consentimento de analytics e atribuição por UTM;
-- confirmação mock persistida durante a sessão;
-- páginas de Termos, Privacidade, 404 e placeholder administrativo.
-
-Não há API, banco de dados, autenticação, processamento de pagamento, e-mail ou integração externa nesta branch.
+> Os textos jurídicos, o domínio de produção, retenção de dados e dados públicos de contato ainda precisam de revisão antes da publicação.
 
 ## Stack
 
-- React 19
-- TypeScript 5
-- Vite 7
-- Wouter
-- React Hook Form
-- Zod
-- Vitest + Testing Library
-- ESLint flat config
-- CSS autoral responsivo
-- pnpm
+### Frontend
+
+- React 19, Vite e TypeScript;
+- Wouter, React Hook Form e Zod;
+- Vitest + Testing Library;
+- services HTTP e mocks atrás das mesmas interfaces.
+
+### Backend
+
+- Node.js 22–26 e TypeScript;
+- Fastify 5, Zod e logger estruturado do Fastify/Pino;
+- PostgreSQL 17;
+- Prisma ORM com migrations versionadas;
+- Luxon para conversões explícitas de timezone;
+- Vitest com PostgreSQL real nos testes de integração;
+- OpenAPI/Swagger em desenvolvimento.
 
 ## Requisitos
 
-- Node.js 22 ou superior, abaixo da versão 27
-- pnpm 10.15.1
+- Node.js 22 ou superior, abaixo da versão 27;
+- pnpm 10.15.1;
+- Docker para o PostgreSQL local e testes de integração.
 
-## Como rodar
+## Configuração local
 
 ```bash
 pnpm install --frozen-lockfile
-cp .env.example .env.local
-pnpm dev
+cp .env.example .env
+docker compose up -d
+pnpm db:migrate:deploy
+pnpm db:seed
 ```
 
-`VITE_SITE_URL` define a origem usada por canonical, Open Graph e metadata por rota. Em desenvolvimento, a aplicação usa `window.location.origin` quando a variável não existe.
+O Compose inicia somente PostgreSQL e cria `celeste` e `celeste_test`. O seed é idempotente: pode ser executado novamente sem duplicar serviços ou regras semanais.
+
+Para iniciar em dois terminais:
+
+```bash
+pnpm dev:server
+pnpm dev:frontend
+```
+
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:3000/api`
+- Swagger: `http://localhost:3000/api/docs`
+
+`pnpm dev` permanece como atalho para o frontend. O backend inicia isoladamente com `pnpm dev:server`.
+
+## Variáveis de ambiente
+
+| Variável | Uso |
+| --- | --- |
+| `DATABASE_URL` | Conexão PostgreSQL do backend |
+| `TEST_DATABASE_URL` | Banco isolado dos testes de integração |
+| `PORT` / `API_HOST` | Bind HTTP do Fastify |
+| `FRONTEND_ORIGIN` | Origem CORS permitida; produção não usa `*` |
+| `BOOKING_HOLD_MINUTES` | Validade de um booking agendado pendente; padrão 15 |
+| `BUSINESS_TIMEZONE` | Timezone oficial; `America/Sao_Paulo` |
+| `TERMS_VERSION` | Versão do consentimento de Termos |
+| `PRIVACY_VERSION` | Versão do consentimento de Privacidade |
+| `ENABLE_SWAGGER` | Habilita docs fora de produção |
+| `VITE_API_URL` | Base URL da API no cliente |
+| `VITE_USE_MOCK_API` | `true` mantém booking/disponibilidade locais; `false` usa a API |
+| `VITE_SITE_URL` | Origem pública para metadata do frontend |
+
+Não versionar `.env` nem segredos reais.
 
 ## Scripts
 
 | Comando | Finalidade |
 | --- | --- |
-| `pnpm dev` | Inicia somente o Vite |
-| `pnpm build` | Gera o frontend de produção em `dist/` |
-| `pnpm preview` | Serve localmente o build de produção |
-| `pnpm check` | Executa TypeScript sem emitir arquivos |
-| `pnpm lint` | Executa ESLint |
-| `pnpm test` | Executa a suíte Vitest uma vez |
+| `pnpm dev` / `pnpm dev:frontend` | Inicia Vite |
+| `pnpm dev:server` | Inicia Fastify com reload |
+| `pnpm start:server` | Inicia o backend compilado |
+| `pnpm build` | Gera frontend e backend |
+| `pnpm build:frontend` | Gera a SPA em `dist/` |
+| `pnpm build:server` | Compila backend em `dist/backend/` |
+| `pnpm check` | TypeScript frontend + backend |
+| `pnpm lint` | ESLint de todo o repositório |
+| `pnpm test:frontend` | Testes React e de adapters |
+| `pnpm test:server:unit` | Testes unitários do domínio/backend |
+| `pnpm test:server:integration` | Testes REST com PostgreSQL real |
+| `pnpm coverage:server` | Coverage backend e thresholds |
+| `pnpm prisma:generate` | Gera Prisma Client |
+| `pnpm db:migrate` | Cria/aplica migration em desenvolvimento |
+| `pnpm db:migrate:deploy` | Aplica migrations já versionadas |
+| `pnpm db:seed` | Executa catálogo e agenda iniciais |
+
+Para testes de integração locais:
+
+```bash
+TEST_DATABASE_URL="postgresql://celeste:celeste@localhost:5432/celeste_test?schema=public" pnpm test:server:integration
+```
 
 ## Arquitetura
 
 ```text
-client/
-├── public/                 # marca, robots e sitemap
-└── src/
-    ├── components/         # estrutura compartilhada, marca, consentimento e efeitos de rota
-    ├── config/             # configuração central de assets
-    ├── data/               # catálogo e conteúdo editorial
-    ├── features/booking/   # regras de transição, steps e schemas
-    ├── lib/                # adaptador central de analytics
-    ├── mocks/              # dados demonstrativos de disponibilidade
-    ├── pages/              # rotas da SPA
-    ├── services/           # contratos e implementações mock
-    ├── test/               # setup de testes DOM
-    ├── types/              # tipos do domínio
-    └── utils/              # formatação derivada
-docs/                       # registro da linha de base
-.github/workflows/          # CI frontend
+client/src/
+├── components/          UI compartilhada
+├── data/                conteúdo editorial local
+├── features/booking/    estado, passos e validação frontend
+├── lib/apiClient.ts     transporte HTTP, timeout e erros
+├── services/            interfaces + implementações Mock/API
+└── types/               contratos consumidos pela UI
+
+server/
+├── app.ts               composição Fastify e dependências
+├── server.ts            processo HTTP
+├── config/              ambiente validado
+├── db/                  Prisma Client
+├── domain/              tempo, código público, hash e DTOs
+├── errors/              erros de domínio consistentes
+├── middleware/          tratamento seguro de erros
+├── repositories/        acesso PostgreSQL e transações
+├── routes/              transporte REST/OpenAPI
+├── schemas/             validação Zod e schemas OpenAPI
+├── services/            casos de uso e regras de negócio
+└── tests/               unitários e integração real
+
+prisma/
+├── migrations/          histórico SQL reproduzível
+├── schema.prisma        modelo relacional
+└── seed.ts              catálogo e agenda iniciais
 ```
 
-Conteúdo, regras, mocks e integrações possuem responsabilidades separadas. Componentes não conhecem detalhes de banco, transporte HTTP ou provedor de pagamento.
+O fluxo backend é:
 
-## Modelo de leituras
-
-`Reading` usa `fulfillmentType`, `durationMinutes` e `availableModalities` como fontes de verdade. Preço é mantido somente como número e formatado por `formatBRL`/`formatPriceFrom`.
-
-Regras atuais:
-
-- Pergunta Direta é `async`, usa `message` e não consulta disponibilidade.
-- Leituras de 30 e 60 minutos são `scheduled`.
-- Modalidades de leituras agendadas vêm de `availableModalities`.
-- Nenhuma regra de negócio depende de textos como “30 minutos” ou “Leitura assíncrona”.
-
-## Fluxos de booking
-
-### Scheduled
-
-Leitura → Modalidade → Data e horário → Dados → Resumo → Pagamento
-
-### Async
-
-Leitura → Pergunta/contexto → Dados → Resumo → Pagamento
-
-Para `?modalidade=voice` ou `?modalidade=video`, a modalidade é preservada e o catálogo inicial mostra somente leituras compatíveis. Quando `servico` e `modalidade` explícitos são incompatíveis, prevalece a leitura: a modalidade inválida é descartada e a única modalidade válida de uma leitura assíncrona é aplicada.
-
-Resets em cascata:
-
-- trocar leitura revalida a modalidade e limpa data/horário;
-- trocar modalidade limpa data/horário;
-- trocar data limpa horário;
-- o resumo nunca deve conter modalidade, data ou horário incompatíveis.
-
-Todos os horários mock representam `America/Sao_Paulo`. Disponibilidade real será autoridade exclusiva do backend.
-
-## Mock services
-
-As interfaces em `client/src/services/` formam a fronteira para a próxima fase:
-
-- `AvailabilityService`: datas e slots;
-- `BookingService`: criação e consulta por código público;
-- `PaymentService`: criação de checkout e consulta de status.
-
-As implementações atuais são exclusivamente demonstrativas. O código público é gerado no navegador e o booking é guardado em `sessionStorage`; isso não é persistência, segurança ou garantia de reserva. Produção deve gerar o código no servidor.
-
-O checkout não coleta cartão, não executa Pix e não confirma reservas. Os estados aprovado, recusado, expirado e cancelado existem apenas para composição visual; aprovação só pode ser selecionada manualmente em desenvolvimento.
-
-## Analytics e UTMs
-
-Todos os eventos passam por `track()`. Componentes não chamam SDKs de terceiros diretamente. Os adapters futuros de GA4, Meta Pixel e Google Ads devem ser conectados somente nessa fronteira e apenas após consentimento.
-
-Eventos preparados:
-
-- `page_view`
-- `view_service`
-- `select_service`
-- `select_modality`
-- `begin_booking`
-- `select_date`
-- `select_time`
-- `submit_customer_data`
-- `begin_checkout`
-- `mock_checkout_viewed`
-- `purchase`
-- `whatsapp_click`
-
-UTMs suportadas: `utm_source`, `utm_medium`, `utm_campaign`, `utm_content` e `utm_term`. Elas são capturadas uma vez no bootstrap quando presentes e persistidas em `sessionStorage`.
-
-**PURCHASE MUST ONLY BE FIRED AFTER VERIFIED BACKEND PAYMENT CONFIRMATION.** O frontend mock nunca emite `purchase`, inclusive quando o estado visual aprovado é selecionado em desenvolvimento.
-
-## Acessibilidade
-
-- zoom do navegador permanece habilitado;
-- foco visível em controles interativos;
-- stepper com `ol`/`li` e `aria-current`;
-- seleções com `aria-pressed`;
-- formulários com labels, `aria-invalid`, `aria-describedby` e erros anunciados;
-- aceite de Termos validado pelo schema;
-- menu mobile com `aria-expanded`, `aria-controls`, Escape e retorno de foco;
-- header ganha superfície legível após scroll;
-- CTA mobile respeita `env(safe-area-inset-bottom)`;
-- microcopy usa tamanho mínimo de 11px e textos auxiliares 12px ou mais;
-- paleta de texto secundário usa contraste reforçado sobre os fundos escuros.
-
-Os breakpoints foram revisados para 375px, 390px, 430px, 768px, 1024px e 1440px, com atenção a header, hero, catálogo, booking, seletores, formulários, pagamento, CTA fixa e footer.
-
-## SEO e deploy
-
-O HTML contém metadata base, canonical, Open Graph, Twitter Card, favicon, apple-touch-icon, `robots.txt` e `sitemap.xml`. `RouteEffects` atualiza título, descrição, canonical e Open Graph para navegação SPA.
-
-Antes da publicação:
-
-1. configurar `VITE_SITE_URL` com o domínio real;
-2. substituir `celeste.example` em `robots.txt` e `sitemap.xml`;
-3. revisar os textos jurídicos e dados de contato;
-4. avaliar prerenderização ou SSR para SEO avançado.
-
-Como esta é uma SPA Vite, crawlers sem execução de JavaScript recebem apenas a metadata base. Metadata dinâmica server-side e prerender são trabalhos futuros. `vercel.json` encaminha rotas sem arquivo próprio para `index.html`, permitindo refresh direto em `/agendar`, `/leituras/...`, `/agendamento/...`, `/privacidade` e `/termos`.
-
-## Testes
-
-```bash
-pnpm check
-pnpm lint
-pnpm test
-pnpm build
+```text
+route → schema Zod → service/use case → repository → PostgreSQL
 ```
 
-A suíte cobre catálogo, preço, fulfillment, modalidades, querystrings, resets em cascata, fluxos async/scheduled, schemas, termos, e-mail, disponibilidade mock, UTMs, consentimento, código público, persistência da sessão e ausência de `purchase` no checkout mock.
+Rotas não contêm regra de negócio, componentes React não chamam `fetch` diretamente e a UI não conhece Prisma.
 
-## Regras de negócio reservadas
+## Catálogo e fulfillment
 
-- Pergunta Direta é assíncrona.
-- Consultas de 30/60 minutos são agendadas.
-- Modalidades dependem da leitura.
-- Timezone oficial: `America/Sao_Paulo`.
-- O backend será a fonte de verdade de disponibilidade.
-- O backend deverá impedir double-booking com operação atômica.
-- Booking só será confirmado após pagamento confirmado.
-- O evento `purchase` só poderá ocorrer após confirmação real e verificada do pagamento.
+O banco é autoridade para preço, duração, modalidade, fulfillment e ativação. Dinheiro é persistido e transportado em centavos (`priceCents`), nunca como float.
 
-## Backend Integration Points
+| Serviço | Fulfillment | Duração | Preço | Modalidades |
+| --- | --- | ---: | ---: | --- |
+| Pergunta Direta | `ASYNC` | — | 4900 | `MESSAGE` |
+| Entre Caminhos | `SCHEDULED` | 30 min | 12900 | `VOICE`, `VIDEO` |
+| Amor & Relações | `SCHEDULED` | 30 min | 12900 | `VOICE`, `VIDEO` |
+| Panorama do Ciclo | `SCHEDULED` | 30 min | 12900 | `VOICE`, `VIDEO` |
+| Leitura Profunda | `SCHEDULED` | 60 min | 17900 | `VOICE`, `VIDEO` |
 
-Esta seção define contratos futuros; nenhum endpoint está implementado nesta branch.
+`ASYNC` exige pergunta e não aceita data/horário. `SCHEDULED` exige modalidade, data e horário válidos e não aceita `question`. O PostgreSQL também possui checks para esses invariantes.
 
-### `GET /services`
+## Disponibilidade e timezone
 
-Retorna o catálogo publicado. Cada item deve fornecer `slug`, nome, conteúdo editorial, `fulfillmentType`, `durationMinutes`, preço em unidade monetária inteira, modalidades, disponibilidade comercial e prazo estimado opcional.
+A configuração inicial de desenvolvimento atende terça a sábado, 09:00–18:00, com buffer de 15 minutos. O modelo suporta:
 
-### `GET /availability`
+- regras por dia da semana;
+- janelas de início/fim e buffer;
+- bloqueios por período;
+- datas integralmente bloqueadas;
+- exceções com janelas substitutas.
 
-Parâmetros esperados: `serviceSlug`, `modality`, intervalo de datas e timezone. Retorna datas e slots ainda disponíveis. Deve ignorar serviços assíncronos e nunca confiar em slots enviados pelo frontend.
+Todos os dias/horários recebidos são interpretados explicitamente em `America/Sao_Paulo`. Instantes de booking são convertidos e persistidos em UTC (`timestamptz`). A geração de slots nunca depende do timezone da máquina ou do navegador.
 
-### `POST /bookings`
+O frontend e seus dados exibidos não são fonte de verdade. O slot é recalculado no servidor no momento da criação.
 
-Recebe leitura, modalidade, data/slot quando agendado, questão quando assíncrono, dados do cliente, aceite/versionamento jurídico e UTMs. Deve:
+## Lifecycle do booking
 
-- revalidar preço, modalidade e disponibilidade;
-- criar código público server-side não previsível;
-- impedir double-booking atomicamente;
-- iniciar como pendente de pagamento;
-- aceitar chave de idempotência;
-- nunca confiar no preço ou status enviado pelo navegador.
+Novos bookings sempre começam assim:
 
-### `GET /bookings/:publicCode`
+```text
+status = PENDING_PAYMENT
+paymentStatus = AWAITING_PAYMENT
+```
 
-Retorna uma projeção pública mínima do booking, sem expor identificadores internos ou dados sensíveis desnecessários. A política de acesso ao código público deve ser definida no backend.
+Bookings agendados recebem `expiresAt` de 15 minutos por padrão. Enquanto o hold está válido, o intervalo bloqueia a agenda. Se vencer, a consulta de disponibilidade o marca `EXPIRED` e libera o período; não há cron nesta fase. Bookings assíncronos não reservam slot e não recebem `expiresAt`.
 
-### `POST /checkout`
+`CONFIRMED` e `APPROVED` existem no modelo para evolução, mas nunca são produzidos por esta fase.
 
-Recebe uma referência interna/publicamente autorizada do booking e a forma de pagamento. Cria a preferência/sessão no provedor e retorna somente dados seguros necessários para montar Pix ou o componente oficial de cartão.
+## Proteção contra double-booking
 
-### `GET /payments/:id`
+A reserva não usa um `SELECT` desprotegido. Dentro de uma única transação PostgreSQL, o repositório:
 
-Retorna o estado sanitizado do pagamento: aguardando, aprovado, recusado, expirado ou cancelado. O frontend pode consultar para UX, mas não é autoridade de confirmação.
+1. adquire advisory lock transacional da chave de idempotência;
+2. resolve replay ou conflito da chave;
+3. para bookings agendados, adquire advisory lock transacional por dia da agenda;
+4. expira holds vencidos;
+5. verifica sobreposição considerando duração e buffer;
+6. insere o booking ainda sob o lock.
 
-### Webhook do provedor de pagamento
+Serializar por dia protege também sobreposições entre leituras de 30 e 60 minutos, não apenas igualdade de `scheduledStart`. Índices dão suporte às buscas e uma constraint única protege a chave idempotente.
 
-Deve existir apenas no backend. O webhook precisa validar autenticidade, ser idempotente, buscar/confirmar o estado diretamente no provedor e atualizar pagamento e booking de forma consistente. Somente após essa confirmação o backend pode autorizar o evento `purchase`.
+O teste CT09 envia duas requisições simultâneas ao mesmo slot: uma recebe `201`, a outra `409 SLOT_UNAVAILABLE`, e apenas um booking ativo existe.
 
-### Contratos adicionais da próxima fase
+## Idempotência
 
-- versionamento dos Termos e da Política de Privacidade;
-- configuração de prazos para leituras assíncronas;
-- políticas de remarcação, cancelamento e expiração;
-- serviço de e-mail e notificações, fora do request principal;
-- observabilidade e trilha de auditoria de mudanças de status;
-- autenticação e autorização administrativas em fase separada.
+`POST /api/bookings` exige `Idempotency-Key` de 8–128 caracteres. O servidor persiste a chave e um SHA-256 de representação estável do payload.
 
-## Fora de escopo desta fase
+- mesma chave + mesmo payload: devolve o booking original (`200`, `idempotency-replayed: true`);
+- mesma chave + payload diferente: `409 IDEMPOTENCY_CONFLICT`;
+- requisições simultâneas: advisory lock + índice único impedem duplicação.
 
-- backend real;
-- banco de dados e migrations;
-- integração real com Mercado Pago;
-- webhook;
-- autenticação ou dashboard administrativo;
-- envio de e-mail;
-- API de WhatsApp;
-- integrações externas.
+O hash detecta divergência; não é usado como mecanismo de autenticação.
+
+## API REST
+
+### `GET /api/health`
+
+Verifica processo e conexão com banco sem expor detalhes sensíveis.
+
+### `GET /api/services`
+
+Retorna apenas serviços ativos. Expõe `priceCents`, fulfillment, duração e modalidades em formato compatível com adapters frontend.
+
+### `GET /api/availability`
+
+Parâmetros obrigatórios: `serviceSlug`, `modality`, `from`, `to`. O range inclusivo é limitado a 60 dias. Serviços async retornam `INVALID_FULFILLMENT` e nunca geram horários fictícios.
+
+```json
+{
+  "timezone": "America/Sao_Paulo",
+  "fulfillmentType": "SCHEDULED",
+  "dates": [{ "date": "2026-10-02", "slots": [{ "startTime": "09:00", "available": true }] }]
+}
+```
+
+### `POST /api/bookings`
+
+Valida novamente serviço, ativação, modalidade, fulfillment, cliente, consentimento e disponibilidade. O payload não aceita preço, status nem ID. O preço vigente é copiado do serviço no banco para preservar histórico.
+
+O servidor gera `publicCode` com `crypto.randomBytes`; IDs UUID internos não são retornados.
+
+### `GET /api/bookings/:publicCode`
+
+Retorna projeção mínima: código público, serviço, estados, fulfillment, modalidade, agenda, timezone, preço, hold e criação. Não retorna ID interno, nome, e-mail, WhatsApp, pergunta ou contexto.
+
+### Erros
+
+```json
+{
+  "error": {
+    "code": "SLOT_UNAVAILABLE",
+    "message": "Esse horário não está mais disponível."
+  }
+}
+```
+
+Códigos de domínio: `VALIDATION_ERROR`, `SERVICE_NOT_FOUND`, `SERVICE_INACTIVE`, `INVALID_MODALITY`, `INVALID_FULFILLMENT`, `SLOT_UNAVAILABLE`, `BOOKING_NOT_FOUND`, `IDEMPOTENCY_CONFLICT` e `INTERNAL_ERROR`.
+
+## Frontend: API e modo mock
+
+`client/src/lib/apiClient.ts` centraliza base URL, JSON, timeout, headers, request ID e mapeamento de erros. `ApiAvailabilityService` e `ApiBookingService` implementam as interfaces existentes; componentes não usam `fetch`.
+
+- `VITE_USE_MOCK_API=true`: navegação visual sem backend;
+- `VITE_USE_MOCK_API=false`: disponibilidade e bookings reais;
+- `PaymentService`: permanece sempre mock nesta fase.
+
+Se um slot for perdido entre seleção e criação, a UI apresenta “Esse horário acabou de ficar indisponível. Escolha outro horário para continuar.”, limpa o horário e recarrega a agenda.
+
+## Segurança e dados pessoais
+
+- Helmet e headers seguros;
+- CORS restrito por `FRONTEND_ORIGIN`;
+- body máximo de 32 KiB;
+- rate limit global e limite específico de criação;
+- schemas Fastify + Zod com rejeição de campos extras;
+- request/correlation ID devolvido em `x-request-id`;
+- logs estruturados de rota/status/duração pelo Fastify;
+- logs de booking limitados a código público, serviço e status;
+- redaction de customer, pergunta, contexto, cookie e autorização;
+- stack traces não são retornadas ao cliente;
+- segredos somente por ambiente.
+
+Nome, e-mail, WhatsApp, pergunta e contexto são dados pessoais. Esta fase minimiza a projeção pública, versiona consentimento e registra `termsAcceptedAt`. Retenção, exclusão e anonimização são decisões pendentes. Não há tabela, coleta ou armazenamento de cartão/CVV.
+
+## Analytics
+
+Analytics continua centralizado em `track()` e condicionado a consentimento. O backend booking core não emite eventos de marketing.
+
+**PURCHASE MUST ONLY BE FIRED AFTER VERIFIED BACKEND PAYMENT CONFIRMATION.** Nem o mock visual aprovado, nem a criação `PENDING_PAYMENT`, nem qualquer endpoint desta fase emite `purchase`.
+
+## Testes e coverage
+
+Os testes frontend cobrem estado, validação, analytics, mocks, cliente HTTP e adapters. Os testes backend cobrem catálogo, modalidade, fulfillment, preço, código público, timezone, slots, duração, buffer, bloqueios, consentimento, expiração, idempotência e projeção pública.
+
+A suíte de integração usa PostgreSQL real e cobre a matriz CT01–CT18, incluindo concorrência. Prisma não é mockado nos riscos críticos.
+
+Thresholds backend:
+
+- linhas e statements: 80%;
+- funções: 80%;
+- branches: 70%.
+
+## CI
+
+`.github/workflows/frontend-ci.yml` executa em pull requests e pushes na `main`:
+
+- frontend: install congelado, TypeScript, lint, testes e build;
+- backend: PostgreSQL 17, Prisma generate, migrations, TypeScript, lint, unitários, integração, coverage e build.
+
+Não há secrets nem deploy automático.
+
+## Deploy
+
+O frontend Vite mantém o rewrite SPA da Vercel. API e PostgreSQL precisam ser publicados em infraestrutura Node/PostgreSQL separada; configurar `VITE_API_URL`, `FRONTEND_ORIGIN` e `DATABASE_URL` por ambiente. Executar `pnpm db:migrate:deploy` antes de iniciar a versão backend.
+
+Swagger só é montado quando `ENABLE_SWAGGER=true` e `NODE_ENV` não é `production`.
+
+## Payment Integration — Next Phase
+
+Ainda não implementado:
+
+- Mercado Pago, Pix e cartão reais;
+- `POST /api/checkout`;
+- `GET /api/payments/:id`;
+- webhook autenticado e idempotente;
+- transições verificadas para `APPROVED`/`CONFIRMED`;
+- autorização server-side do evento `purchase`;
+- política definitiva de expiração/cancelamento após pagamento;
+- e-mail, WhatsApp, autenticação e administração.
+
+A próxima fase deve criar o pagamento referenciando um booking existente, validar webhooks diretamente com o provedor e confirmar booking apenas após pagamento verificado. O backend também deverá resolver conflitos entre hold expirado e pagamento tardio antes de habilitar cobrança real.
+
+## Fora de escopo
+
+- Mercado Pago e webhook;
+- cobrança Pix/cartão;
+- e-mail e WhatsApp API;
+- autenticação ou painel admin;
+- CRUD administrativo e relatórios;
+- cupons/descontos;
+- SSR ou CMS.
