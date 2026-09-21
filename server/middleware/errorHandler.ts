@@ -22,7 +22,8 @@ export function registerErrorHandler(app: FastifyInstance) {
       return reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Os dados enviados são inválidos." } });
     }
 
-    request.log.error({ err: error }, "unhandled request error");
+    const technicalCode = "code" in error && typeof error.code === "string" ? error.code : undefined;
+    request.log.error({ errorName: error.name, technicalCode }, "unhandled request error");
     return reply.status(500).send({ error: { code: "INTERNAL_ERROR", message: "Não foi possível concluir a solicitação." } });
   });
 }
