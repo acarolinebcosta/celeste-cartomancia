@@ -1,59 +1,209 @@
-import { ArrowLeft, ArrowRight, Check, ChevronLeft, Clock3, LockKeyhole, MessageCircle, ShieldCheck, Video, WalletCards } from "lucide-react";
-import { useMemo, useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { ArrowLeft, ArrowRight, Check, Clock3, CreditCard, LockKeyhole, MessageCircle, QrCode, ShieldCheck, Video } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
 import { Link, useLocation } from "wouter";
 import SiteHeader from "@/components/SiteHeader";
-import { emptyBooking, formatBRL, formatDateLong, formatDateShort, getAvailableDates, getAvailableTimes, getModalityLabel, getReading, modalityDetails, readings, type BookingState, type Modality } from "@/lib/content";
+import { getModalityLabel, modalityDetails } from "@/data/modalities";
+import { getReading, readings } from "@/data/readings";
+import { asyncQuestionSchema, customerSchema, type AsyncQuestionFormData, type CustomerFormData } from "@/features/booking/customerSchema";
+import { getBookingSteps, initializeBookingFromSearch, selectDate, selectModality, selectReading, stepLabels, type BookingStep } from "@/features/booking/bookingState";
 import { getStoredUtms, track } from "@/lib/analytics";
-import { createMockBookingPreview, type BookingPreview } from "@/services/bookingService";
-
-const steps = ["Leitura", "Modalidade", "Data e horário", "Seus dados", "Pagamento"];
+import { availabilityService, type AvailabilitySlot, type AvailableDate } from "@/services/availabilityService";
+import { bookingService } from "@/services/bookingService";
+import { paymentService, type PaymentMethod } from "@/services/paymentService";
+import type { BookingDraft, Modality, PaymentStatus, Reading } from "@/types/domain";
+import { formatBRL, formatDate, formatDateLong, formatDateShort, formatReadingDuration } from "@/utils/formatters";
 
 export default function Booking() {
-  const [location, setLocation] = useLocation();
-  const params = useMemo(() => new URLSearchParams(location.split("?")[1] ?? ""), [location]);
-  const initialReading = params.get("servico") ?? readings[0].slug;
-  const [step, setStep] = useState(0);
-  const [booking, setBooking] = useState<BookingState>({ ...emptyBooking, readingSlug: initialReading });
-  const [confirmed, setConfirmed] = useState(false);
-  const [bookingPreview, setBookingPreview] = useState<BookingPreview | null>(null);
+  const [, setLocation] = useLocation();
+  const initial = useMemo(() => initializeBookingFromSearch(window.location.search), []);
+  const [booking, setBooking] = useState(initial.booking);
+  const [modalityFilter, setModalityFilter] = useState<Modality | null>(initial.modalityFilter);
+  const [stepIndex, setStepIndex] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
-  const dates = useMemo(() => getAvailableDates(), []);
+  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([]);
   const reading = getReading(booking.readingSlug);
-  const times = useMemo(() => getAvailableTimes(reading), [reading]);
+  const steps = useMemo(() => getBookingSteps(reading), [reading]);
+  const activeStep = steps[stepIndex];
+  const visibleReadings = modalityFilter
+    ? readings.filter((item) => item.availableModalities.includes(modalityFilter))
+    : readings;
 
-  const update = <K extends keyof BookingState>(key: K, value: BookingState[K]) => setBooking((current) => ({ ...current, [key]: value }));
-  const next = () => {
-    setErrors([]);
-    if (step === 0) track("select_service", { service: booking.readingSlug });
-    if (step === 1 && !booking.modality) return setErrors(["Escolha uma modalidade para continuar."]);
-    if (step === 2 && (!booking.date || !booking.time)) return setErrors(["Escolha um dia e um horário disponíveis."]);
-    if (step === 3) {
-      const nextErrors = [];
-      if (!booking.name.trim()) nextErrors.push("Informe seu nome.");
-      if (!booking.email.includes("@")) nextErrors.push("Informe um e-mail válido.");
-      if (!booking.whatsapp.trim()) nextErrors.push("Informe seu WhatsApp.");
-      if (nextErrors.length) return setErrors(nextErrors);
-      track("begin_checkout", { service: reading.slug, modality: booking.modality, utms: getStoredUtms() });
+  useEffect(() => {
+    let active = true;
+    setAvailableDates([]);
+    void availabilityService.getAvailableDates(reading).then((dates) => {
+      if (active) setAvailableDates(dates);
+    });
+    return () => { active = false; };
+  }, [reading]);
+
+  useEffect(() => {
+    let active = true;
+    setAvailableSlots([]);
+    if (reading.fulfillmentType === "scheduled" && booking.date) {
+      void availabilityService.getAvailableSlots(reading, booking.date).then((slots) => {
+        if (active) setAvailableSlots(slots);
+      });
     }
-    setStep((current) => Math.min(current + 1, steps.length - 1));
-  };
-  const back = () => { setErrors([]); setStep((current) => Math.max(current - 1, 0)); };
-  const confirmDemo = () => {
-    const preview = createMockBookingPreview(booking, reading);
-    setBookingPreview(preview);
-    track("purchase", { status: preview.paymentStatus, service: reading.slug, utms: preview.utms });
-    setConfirmed(true);
+    return () => { active = false; };
+  }, [booking.date, reading]);
+
+  const goBack = () => {
+    setErrors([]);
+    setStepIndex((value) => Math.max(0, value - 1));
   };
 
-  if (confirmed && bookingPreview) return <Confirmation preview={bookingPreview} setLocation={setLocation} />;
+  const goForward = () => {
+    setErrors([]);
+    if (activeStep === "reading") track("select_service", { service: reading.slug });
+    if (activeStep === "modality" && !booking.modality) {
+      setErrors(["Escolha uma modalidade para continuar."]);
+      return;
+    }
+    if (activeStep === "schedule" && (!booking.date || !booking.time)) {
+      setErrors(["Escolha um dia e um horário disponíveis."]);
+      return;
+    }
+    if (activeStep === "summary") {
+      track("begin_checkout", {
+        service: reading.slug,
+        modality: booking.modality ?? "message",
+        utms: getStoredUtms(),
+      });
+    }
+    setStepIndex((value) => Math.min(value + 1, steps.length - 1));
+  };
 
-  return <div className="site-shell booking-shell"><SiteHeader /><main className="booking-page section-pad"><div className="booking-heading"><Link href="/" className="back-link"><ChevronLeft size={15} /> Voltar ao início</Link><span className="section-kicker">AGENDAMENTO · AMERICA/SAO_PAULO</span><h1>Um encontro começa<br /><em>com espaço.</em></h1></div><div className="stepper" aria-label="Etapas do agendamento">{steps.map((item, index) => <div className={`stepper-item ${index === step ? "active" : ""} ${index < step ? "done" : ""}`} key={item}><span>{index < step ? <Check size={13} /> : `0${index + 1}`}</span><label>{item}</label></div>)}</div><div className="booking-layout"><section className="booking-card">{step === 0 && <ReadingStep selected={booking.readingSlug} onSelect={(value) => update("readingSlug", value)} />}{step === 1 && <ModalityStep reading={reading} selected={booking.modality} onSelect={(value) => { update("modality", value); track("select_modality", { modality: value }); }} />}{step === 2 && <DateStep dates={dates} times={times} selectedDate={booking.date} selectedTime={booking.time} onDate={(value) => { update("date", value); update("time", ""); track("select_date", { date: value }); }} onTime={(value) => { update("time", value); track("select_time", { time: value }); }} />}{step === 3 && <DetailsStep booking={booking} update={update} />}{step === 4 && <PaymentStep booking={booking} reading={reading} onConfirm={confirmDemo} />}{errors.length > 0 && <div className="form-errors" role="alert">{errors.map((error) => <p key={error}>{error}</p>)}</div>}{step < 4 && <div className="booking-actions"><button className="button button-ghost" onClick={back} disabled={step === 0}><ArrowLeft size={15} /> Voltar</button><button className="button button-primary" onClick={next}>Continuar <ArrowRight size={15} /></button></div>}</section><aside className="booking-summary"><span className="section-kicker">RESUMO</span><div className="summary-symbol">✦</div><h2>{reading.name}</h2><p>{reading.description}</p><div className="summary-line"><span>Valor inicial</span><strong>{formatBRL(reading.price)}</strong></div>{booking.modality && <div className="summary-line"><span>Modalidade</span><strong>{getModalityLabel(booking.modality)}</strong></div>}{booking.date && <div className="summary-line"><span>Quando</span><strong>{new Date(`${booking.date}T12:00:00`).toLocaleDateString("pt-BR")} · {booking.time}</strong></div>}<div className="summary-note"><LockKeyhole size={15} /> Seus dados são tratados com privacidade.</div></aside></div></main></div>;
+  const chooseReading = (next: Reading) => {
+    setBooking((current) => selectReading(current, next));
+    setErrors([]);
+  };
+
+  const saveQuestion = (data: AsyncQuestionFormData) => {
+    setBooking((current) => ({ ...current, question: data.question }));
+    setStepIndex((value) => value + 1);
+  };
+
+  const saveCustomer = (data: CustomerFormData) => {
+    setBooking((current) => ({ ...current, ...data }));
+    track("submit_customer_data", { service: reading.slug, fulfillmentType: reading.fulfillmentType });
+    setStepIndex((value) => value + 1);
+  };
+
+  const createPreview = async (method: PaymentMethod) => {
+    const preview = await bookingService.createBooking({ reading, data: booking, utms: getStoredUtms() });
+    await paymentService.createCheckout(preview.publicCode, method);
+    setLocation(`/agendamento/${preview.publicCode}`);
+  };
+
+  return (
+    <div className="site-shell booking-shell">
+      <SiteHeader />
+      <main className="booking-page section-pad">
+        <div className="booking-heading">
+          <Link href="/" className="back-link"><ArrowLeft size={15} /> Voltar ao início</Link>
+          <span className="section-kicker">ATENDIMENTO · AMERICA/SAO_PAULO</span>
+          <h1>Um encontro começa<br /><em>com espaço.</em></h1>
+        </div>
+        <Stepper steps={steps} activeIndex={stepIndex} />
+        <div className="booking-layout">
+          <section className="booking-card" aria-live="polite">
+            {activeStep === "reading" && <ReadingStep readings={visibleReadings} selected={booking.readingSlug} modalityFilter={modalityFilter} onClearFilter={() => setModalityFilter(null)} onSelect={chooseReading} />}
+            {activeStep === "modality" && <ModalityStep reading={reading} selected={booking.modality} onSelect={(value) => { setBooking((current) => selectModality(current, value)); track("select_modality", { modality: value, service: reading.slug }); }} />}
+            {activeStep === "schedule" && <ScheduleStep dates={availableDates} slots={availableSlots} booking={booking} reading={reading} onDate={(value) => { setBooking((current) => selectDate(current, value)); track("select_date", { date: value, service: reading.slug }); }} onTime={(value) => { setBooking((current) => ({ ...current, time: value })); track("select_time", { time: value, service: reading.slug }); }} />}
+            {activeStep === "question" && <QuestionStep defaultValue={booking.question} onBack={goBack} onSubmit={saveQuestion} />}
+            {activeStep === "details" && <DetailsStep booking={booking} onBack={goBack} onSubmit={saveCustomer} />}
+            {activeStep === "summary" && <SummaryStep booking={booking} reading={reading} />}
+            {activeStep === "payment" && <PaymentStep reading={reading} onBack={goBack} onConfirm={createPreview} />}
+            {errors.length > 0 && <div className="form-errors" role="alert">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
+            {!["question", "details", "payment"].includes(activeStep) && (
+              <div className="booking-actions">
+                <button className="button button-ghost" type="button" onClick={goBack} disabled={stepIndex === 0}><ArrowLeft size={15} /> Voltar</button>
+                <button className="button button-primary" type="button" onClick={goForward}>{activeStep === "summary" ? "Ir para pagamento" : "Continuar"} <ArrowRight size={15} /></button>
+              </div>
+            )}
+          </section>
+          <BookingSummary booking={booking} reading={reading} />
+        </div>
+      </main>
+    </div>
+  );
 }
 
-function ReadingStep({ selected, onSelect }: { selected: string; onSelect: (value: string) => void }) { return <div><StepIntro eyebrow="01 · LEITURA" title="O que você quer olhar?" copy="Comece escolhendo o formato que melhor acolhe a sua pergunta." /><div className="booking-options">{readings.map((reading) => <button className={`booking-option ${selected === reading.slug ? "selected" : ""}`} key={reading.slug} onClick={() => onSelect(reading.slug)}><span><strong>{reading.name}</strong><small>{reading.eyebrow}</small></span><span className="option-price">{formatBRL(reading.price)}</span></button>)}</div></div>; }
-function ModalityStep({ reading, selected, onSelect }: { reading: ReturnType<typeof getReading>; selected: Modality | null; onSelect: (value: Modality) => void }) { return <div><StepIntro eyebrow="02 · MODALIDADE" title="Como prefere conversar?" copy="Escolha a forma de presença que combina com este momento." /><div className="booking-options">{reading.availableModalities.map((modality) => <button className={`booking-option modality-option ${selected === modality ? "selected" : ""}`} key={modality} onClick={() => onSelect(modality)}><span><strong>{modalityDetails[modality].name}</strong><small>{modalityDetails[modality].description}</small></span><span className="modality-icon">{modality === "video" ? <Video size={18} /> : modality === "voice" ? <MessageCircle size={18} /> : <MessageCircle size={18} />}</span></button>)}</div><p className="quiet-note"><Clock3 size={15} /> Sem cobrança por minuto. O valor exibido é o valor da consulta.</p></div>; }
-function DateStep({ dates, times, selectedDate, selectedTime, onDate, onTime }: { dates: Date[]; times: string[]; selectedDate: string; selectedTime: string; onDate: (value: string) => void; onTime: (value: string) => void }) { return <div><StepIntro eyebrow="03 · DATA E HORÁRIO" title="Encontre um momento." copy="Mostramos apenas horários disponíveis. O fuso considerado é America/Sao_Paulo." /><div className="date-picker"><div className="date-list">{dates.map((date) => { const key = date.toISOString().slice(0, 10); return <button key={key} className={`date-option ${selectedDate === key ? "selected" : ""}`} onClick={() => onDate(key)}><span>{date.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}</span><strong>{formatDateShort(date)}</strong></button>; })}</div>{selectedDate ? <div className="time-list"><span className="section-kicker">HORÁRIOS EM {formatDateLong(new Date(`${selectedDate}T12:00:00`))}</span><div>{times.map((time) => <button key={time} className={`time-option ${selectedTime === time ? "selected" : ""}`} onClick={() => onTime(time)}>{time}</button>)}</div></div> : <p className="quiet-note">Escolha um dia para ver os horários disponíveis.</p>}</div></div>; }
-function DetailsStep({ booking, update }: { booking: BookingState; update: <K extends keyof BookingState>(key: K, value: BookingState[K]) => void }) { return <div><StepIntro eyebrow="04 · SEUS DADOS" title="Como podemos te encontrar?" copy="Só pedimos o necessário para organizar o encontro. O contexto inicial é opcional." /><div className="details-form"><label>Nome<input value={booking.name} onChange={(event) => update("name", event.target.value)} placeholder="Como você gostaria de ser chamada?" /></label><label>E-mail<input type="email" value={booking.email} onChange={(event) => update("email", event.target.value)} placeholder="voce@exemplo.com" /></label><label>WhatsApp<input value={booking.whatsapp} onChange={(event) => update("whatsapp", event.target.value)} placeholder="(00) 00000-0000" /></label><label>Pergunta ou contexto inicial <span>opcional</span><textarea value={booking.context} onChange={(event) => update("context", event.target.value)} placeholder="Se quiser, conte brevemente o que te traz até aqui." rows={4} /></label><label className="consent-line"><input type="checkbox" required /><span>Li e concordo com os <a href="#">Termos</a> e a <a href="#">Política de Privacidade</a>.</span></label></div></div>; }
-function PaymentStep({ booking, reading, onConfirm }: { booking: BookingState; reading: ReturnType<typeof getReading>; onConfirm: () => void }) { return <div><StepIntro eyebrow="05 · PAGAMENTO" title="Tudo certo para continuar?" copy="A integração Mercado Pago será conectada quando as credenciais estiverem disponíveis." /><div className="payment-review"><div><span>Leitura</span><strong>{reading.name}</strong></div><div><span>Encontro</span><strong>{booking.modality ? getModalityLabel(booking.modality) : "—"} · {booking.date ? new Date(`${booking.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"} · {booking.time || "—"}</strong></div><div><span>Valor total</span><strong className="payment-total">{formatBRL(reading.price)}</strong></div></div><div className="mock-payment"><WalletCards size={20} /><div><strong>Pagamento em preparação</strong><p>Este é um ambiente de demonstração. Nenhuma cobrança será realizada e o agendamento não será confirmado como pago.</p></div></div><button className="button button-primary full-button" onClick={onConfirm}>Simular fluxo de confirmação <ArrowRight size={16} /></button><p className="payment-disclaimer"><ShieldCheck size={14} /> Mercado Pago, Pix, cartão, e-mail e bloqueio automático de agenda dependem das credenciais de produção.</p></div>; }
-function StepIntro({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) { return <div className="step-intro"><span className="section-kicker">{eyebrow}</span><h2>{title}</h2><p>{copy}</p></div>; }
-function Confirmation({ preview, setLocation }: { preview: BookingPreview; setLocation: (path: string) => void }) { const { booking, readingName, publicCode, paymentStatus } = preview; return <div className="site-shell booking-shell"><SiteHeader /><main className="confirmation-page section-pad"><div className="confirmation-icon"><Check size={28} /></div><span className="section-kicker">PRÉ-RESERVA · {publicCode}</span><h1>Seu encontro com<br /><em>a Celeste está encaminhado.</em></h1><p className="confirmation-lede">Esta é uma confirmação de demonstração. A reserva real só assumirá o status confirmado após o pagamento validado.</p><div className="confirmation-card"><div><span>Leitura</span><strong>{readingName}</strong></div><div><span>Data e horário</span><strong>{booking.date ? new Date(`${booking.date}T12:00:00`).toLocaleDateString("pt-BR") : "—"} · {booking.time}</strong></div><div><span>Modalidade</span><strong>{booking.modality ? getModalityLabel(booking.modality) : "—"}</strong></div><div><span>Status</span><strong className="pending-status">{paymentStatus === "aguardando_pagamento" ? "Aguardando pagamento" : paymentStatus}</strong></div></div><div className="confirmation-actions"><button className="button button-primary" onClick={() => setLocation("/")}>Voltar para a Celeste <ArrowRight size={16} /></button><a className="button button-ghost" href="https://wa.me/5500000000000" target="_blank" rel="noreferrer">Falar pelo WhatsApp <MessageCircle size={16} /></a></div></main></div>; }
+function Stepper({ steps, activeIndex }: { steps: BookingStep[]; activeIndex: number }) {
+  return (
+    <ol className="stepper" aria-label="Etapas do atendimento">
+      {steps.map((step, index) => (
+        <li className={`stepper-item ${index === activeIndex ? "active" : ""} ${index < activeIndex ? "done" : ""}`} key={step} aria-current={index === activeIndex ? "step" : undefined}>
+          <span aria-hidden="true">{index < activeIndex ? <Check size={13} /> : String(index + 1).padStart(2, "0")}</span>
+          <span className="stepper-label">{stepLabels[step]}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ReadingStep({ readings: choices, selected, modalityFilter, onClearFilter, onSelect }: { readings: Reading[]; selected: string; modalityFilter: Modality | null; onClearFilter: () => void; onSelect: (reading: Reading) => void }) {
+  return <div><StepIntro eyebrow="01 · LEITURA" title="O que você quer olhar?" copy="Comece escolhendo o formato que melhor acolhe a sua pergunta." />{modalityFilter && <p className="filter-note">Mostrando leituras compatíveis com {getModalityLabel(modalityFilter)}. <button type="button" onClick={onClearFilter}>Ver todas</button></p>}<div className="booking-options">{choices.map((reading) => <button type="button" className={`booking-option ${selected === reading.slug ? "selected" : ""}`} aria-pressed={selected === reading.slug} key={reading.slug} onClick={() => onSelect(reading)}><span><strong>{reading.name}</strong><small>{reading.eyebrow}</small></span><span className="option-price">{formatBRL(reading.price)}</span></button>)}</div></div>;
+}
+
+function ModalityStep({ reading, selected, onSelect }: { reading: Reading; selected: Modality | null; onSelect: (value: Modality) => void }) {
+  return <div><StepIntro eyebrow="02 · MODALIDADE" title="Como prefere conversar?" copy="Escolha a forma de presença que combina com este momento." /><div className="booking-options">{reading.availableModalities.map((modality) => <button type="button" className={`booking-option modality-option ${selected === modality ? "selected" : ""}`} aria-pressed={selected === modality} key={modality} onClick={() => onSelect(modality)}><span><strong>{modalityDetails[modality].name}</strong><small>{modalityDetails[modality].description}</small></span><span className="modality-icon">{modality === "video" ? <Video size={18} /> : <MessageCircle size={18} />}</span></button>)}</div><p className="quiet-note"><Clock3 size={15} /> Sem cobrança por minuto. O valor exibido é o valor da consulta.</p></div>;
+}
+
+function ScheduleStep({ dates, slots, booking, reading, onDate, onTime }: { dates: AvailableDate[]; slots: AvailabilitySlot[]; booking: BookingDraft; reading: Reading; onDate: (value: string) => void; onTime: (value: string) => void }) {
+  return <div><StepIntro eyebrow="03 · DATA E HORÁRIO" title="Encontre um momento." copy="Mostramos disponibilidade demonstrativa. O fuso considerado é America/Sao_Paulo." /><div className="date-picker"><div className="date-list">{dates.map(({ isoDate, date }) => <button type="button" key={isoDate} className={`date-option ${booking.date === isoDate ? "selected" : ""}`} aria-pressed={booking.date === isoDate} onClick={() => onDate(isoDate)}><span>{date.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}</span><strong>{formatDateShort(date)}</strong></button>)}</div>{booking.date ? <div className="time-list"><span className="section-kicker">HORÁRIOS EM {formatDateLong(new Date(`${booking.date}T12:00:00`))}</span><div>{slots.map(({ startTime }) => <button type="button" key={startTime} className={`time-option ${booking.time === startTime ? "selected" : ""}`} aria-pressed={booking.time === startTime} onClick={() => onTime(startTime)}>{startTime}</button>)}</div></div> : <p className="quiet-note">Escolha um dia para ver os horários de {formatReadingDuration(reading)}.</p>}</div></div>;
+}
+
+function QuestionStep({ defaultValue, onBack, onSubmit }: { defaultValue: string; onBack: () => void; onSubmit: (data: AsyncQuestionFormData) => void }) {
+  const { register, handleSubmit, formState: { errors } } = useForm<AsyncQuestionFormData>({ resolver: zodResolver(asyncQuestionSchema), defaultValues: { question: defaultValue } });
+  return <form onSubmit={handleSubmit(onSubmit)} noValidate><StepIntro eyebrow="02 · SUA QUESTÃO" title="O que pede clareza?" copy="Envie sua questão e os dados necessários para receber a leitura." /><div className="details-form"><label htmlFor="question">Pergunta</label><textarea id="question" rows={6} {...register("question")} aria-invalid={Boolean(errors.question)} aria-describedby={errors.question ? "question-error" : undefined} placeholder="Conte qual questão você gostaria de olhar." />{errors.question && <p className="field-error" id="question-error" role="alert">{errors.question.message}</p>}<p className="quiet-note">Prazo de entrega será informado antes da confirmação.</p></div><FormActions onBack={onBack} /></form>;
+}
+
+function DetailsStep({ booking, onBack, onSubmit }: { booking: BookingDraft; onBack: () => void; onSubmit: (data: CustomerFormData) => void }) {
+  const { register, handleSubmit, formState: { errors } } = useForm<CustomerFormData>({ resolver: zodResolver(customerSchema), defaultValues: { name: booking.name, email: booking.email, whatsapp: booking.whatsapp, context: booking.context, termsAccepted: booking.termsAccepted } });
+  const errorProps = (name: keyof CustomerFormData) => ({ "aria-invalid": Boolean(errors[name]), "aria-describedby": errors[name] ? `${name}-error` : undefined });
+  return <form onSubmit={handleSubmit(onSubmit)} noValidate><StepIntro eyebrow="SEUS DADOS" title="Como podemos te encontrar?" copy="Só pedimos o necessário para organizar o atendimento. O contexto inicial é opcional." /><div className="details-form"><label htmlFor="name">Nome</label><input id="name" autoComplete="name" {...register("name")} {...errorProps("name")} placeholder="Como você gostaria de ser chamada?" /><FieldError id="name-error" message={errors.name?.message} /><label htmlFor="email">E-mail</label><input id="email" type="email" autoComplete="email" {...register("email")} {...errorProps("email")} placeholder="voce@exemplo.com" /><FieldError id="email-error" message={errors.email?.message} /><label htmlFor="whatsapp">WhatsApp</label><input id="whatsapp" type="tel" autoComplete="tel" {...register("whatsapp")} {...errorProps("whatsapp")} placeholder="(00) 00000-0000" /><FieldError id="whatsapp-error" message={errors.whatsapp?.message} /><label htmlFor="context">Contexto inicial <span>opcional</span></label><textarea id="context" rows={4} {...register("context")} {...errorProps("context")} placeholder="Se quiser, conte brevemente o que te traz até aqui." /><FieldError id="context-error" message={errors.context?.message} /><label className="consent-line"><input type="checkbox" {...register("termsAccepted")} aria-invalid={Boolean(errors.termsAccepted)} aria-describedby={errors.termsAccepted ? "termsAccepted-error" : undefined} /><span>Li e concordo com os <a href="/termos" target="_blank">Termos</a> e a <a href="/privacidade" target="_blank">Política de Privacidade</a>.</span></label><FieldError id="termsAccepted-error" message={errors.termsAccepted?.message} /></div><FormActions onBack={onBack} /></form>;
+}
+
+function SummaryStep({ booking, reading }: { booking: BookingDraft; reading: Reading }) {
+  return <div><StepIntro eyebrow="RESUMO" title="Revise com calma." copy="Confira os dados antes de acessar a demonstração de pagamento." /><div className="payment-review"><div><span>Leitura</span><strong>{reading.name}</strong></div><div><span>Entrega</span><strong>{reading.fulfillmentType === "async" ? "Por mensagem" : `${booking.modality ? getModalityLabel(booking.modality) : "—"} · ${booking.date ? formatDate(booking.date) : "—"} · ${booking.time || "—"}`}</strong></div>{reading.fulfillmentType === "async" && <div><span>Questão</span><strong>{booking.question}</strong></div>}<div><span>Contato</span><strong>{booking.name} · {booking.email}</strong></div><div><span>Valor</span><strong className="payment-total">{formatBRL(reading.price)}</strong></div></div></div>;
+}
+
+const paymentStatusLabels: Record<PaymentStatus, string> = { awaiting_payment: "Aguardando pagamento", rejected: "Pagamento recusado", expired: "Pagamento expirado", cancelled: "Pagamento cancelado", approved: "Pagamento aprovado" };
+
+function PaymentStep({ reading, onBack, onConfirm }: { reading: Reading; onBack: () => void; onConfirm: (method: PaymentMethod) => Promise<void> }) {
+  const [method, setMethod] = useState<PaymentMethod>("pix");
+  const [status, setStatus] = useState<PaymentStatus>("awaiting_payment");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    track("mock_checkout_viewed", { service: reading.slug, paymentStatus: status });
+  }, [reading.slug, status]);
+
+  const confirm = async () => {
+    setSubmitting(true);
+    try { await onConfirm(method); } finally { setSubmitting(false); }
+  };
+
+  return <div><StepIntro eyebrow="PAGAMENTO · DEMONSTRAÇÃO" title="Escolha como continuar." copy="Nenhuma cobrança será realizada. A integração de pagamento será montada aqui futuramente." /><div className="payment-methods" role="group" aria-label="Forma de pagamento demonstrativa"><button type="button" className={method === "pix" ? "selected" : ""} aria-pressed={method === "pix"} onClick={() => setMethod("pix")}><QrCode size={19} /> Pix</button><button type="button" className={method === "card" ? "selected" : ""} aria-pressed={method === "card"} onClick={() => setMethod("card")}><CreditCard size={19} /> Cartão</button></div><div className="payment-placeholder"><ShieldCheck size={20} /><div><strong>{method === "pix" ? "Área reservada para checkout Pix" : "Área reservada para o componente seguro de cartão"}</strong><p>Não informe dados reais. Este frontend não processa nem armazena dados de pagamento.</p></div></div><div className={`payment-status status-${status}`} role="status"><span>Status visual</span><strong>{paymentStatusLabels[status]}</strong>{status === "approved" && <small>Aprovação demonstrativa manual; não gera evento de compra.</small>}</div>{import.meta.env.DEV && <label className="dev-status-control" htmlFor="mock-payment-status">Simular estado visual em desenvolvimento<select id="mock-payment-status" value={status} onChange={(event) => setStatus(event.target.value as PaymentStatus)}>{Object.entries(paymentStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}<div className="booking-actions"><button className="button button-ghost" type="button" onClick={onBack}><ArrowLeft size={15} /> Voltar</button><button className="button button-primary" type="button" disabled={submitting} onClick={confirm}>Criar pré-reserva demonstrativa <ArrowRight size={15} /></button></div><p className="payment-disclaimer"><ShieldCheck size={14} /> A confirmação real dependerá do backend e do pagamento verificado. Nenhum evento de compra é emitido neste mock.</p></div>;
+}
+
+function BookingSummary({ booking, reading }: { booking: BookingDraft; reading: Reading }) {
+  return <aside className="booking-summary"><span className="section-kicker">RESUMO</span><div className="summary-symbol">✦</div><h2>{reading.name}</h2><p>{reading.description}</p><div className="summary-line"><span>Valor inicial</span><strong>{formatBRL(reading.price)}</strong></div>{booking.modality && <div className="summary-line"><span>Modalidade</span><strong>{getModalityLabel(booking.modality)}</strong></div>}{reading.fulfillmentType === "scheduled" && booking.date && <div className="summary-line"><span>Quando</span><strong>{formatDate(booking.date)} {booking.time && `· ${booking.time}`}</strong></div>}{reading.fulfillmentType === "async" && <div className="summary-line"><span>Entrega</span><strong>{reading.estimatedDelivery}</strong></div>}<div className="summary-note"><LockKeyhole size={15} /> Seus dados são tratados com privacidade.</div></aside>;
+}
+
+function StepIntro({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
+  return <div className="step-intro"><span className="section-kicker">{eyebrow}</span><h2>{title}</h2><p>{copy}</p></div>;
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  return message ? <p className="field-error" id={id} role="alert">{message}</p> : null;
+}
+
+function FormActions({ onBack }: { onBack: () => void }) {
+  return <div className="booking-actions"><button className="button button-ghost" type="button" onClick={onBack}><ArrowLeft size={15} /> Voltar</button><button className="button button-primary" type="submit">Continuar <ArrowRight size={15} /></button></div>;
+}
