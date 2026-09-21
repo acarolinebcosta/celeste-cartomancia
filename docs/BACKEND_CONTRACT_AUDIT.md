@@ -1,6 +1,6 @@
 # Auditoria de contratos — Booking Core
 
-Data: 2026-09-20  
+Data: 2026-09-20
 Base: `main` em `9acf868a902c92390f7177ed15b4a99cf9a2fc07`
 
 ## Escopo auditado
@@ -44,4 +44,3 @@ O mock atual persiste todo o `BookingDraft` na projeção lida por código públ
 - Idempotência será serializada por advisory lock da chave e protegida também por índice único.
 - `PENDING_PAYMENT` bloqueia o período apenas até `expiresAt`; registros vencidos são ignorados e podem ser marcados `EXPIRED` sem cron.
 - IDs internos nunca integram DTOs públicos; `publicCode` é gerado no servidor com aleatoriedade criptográfica.
-
