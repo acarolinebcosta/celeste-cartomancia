@@ -1,31 +1,49 @@
-import type { BookingState, Reading } from "@/lib/content";
-import { getStoredUtms } from "@/lib/analytics";
+import type { Booking, CreateBookingInput } from "@/types/domain";
 
-export type PaymentStatus = "aguardando_pagamento" | "pago" | "cancelado" | "expirado" | "reembolsado";
-export type BookingStatus = "rascunho" | "pendente" | "confirmado" | "cancelado";
+const STORAGE_PREFIX = "celeste_mock_booking:";
 
-export type BookingPreview = {
-  publicCode: string;
-  status: BookingStatus;
-  paymentStatus: PaymentStatus;
-  readingName: string;
-  booking: BookingState;
-  utms: Record<string, string>;
-};
-
-/** Adapter temporário: substituir pelo contrato HTTP/tRPC do backend sem alterar os componentes. */
-export function createMockBookingPreview(booking: BookingState, reading: Reading): BookingPreview {
-  return {
-    publicCode: `CEL-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-    status: "pendente",
-    paymentStatus: "aguardando_pagamento",
-    readingName: reading.name,
-    booking,
-    utms: getStoredUtms(),
-  };
+export interface BookingService {
+  createBooking(input: CreateBookingInput): Promise<Booking>;
+  getBooking(publicCode: string): Promise<Booking | null>;
 }
 
-/** Futuro adapter Mercado Pago: nenhum pagamento real é executado nesta versão. */
-export async function createPaymentPreference(_booking: BookingPreview) {
-  return { mode: "mock", status: "awaiting_credentials" as const };
+export function createMockPublicCode(random = Math.random) {
+  const token = random().toString(36).slice(2, 8).toUpperCase().padEnd(6, "0");
+  return `CEL-${token}`;
 }
+
+/**
+ * Preview only. Production codes MUST be generated and validated server-side;
+ * this value is not a security boundary or a durable identifier.
+ */
+export class MockBookingService implements BookingService {
+  async createBooking(input: CreateBookingInput): Promise<Booking> {
+    const booking: Booking = {
+      publicCode: createMockPublicCode(),
+      status: "pending_payment",
+      paymentStatus: "awaiting_payment",
+      readingName: input.reading.name,
+      data: { ...input.data },
+      utms: { ...input.utms },
+      createdAt: new Date().toISOString(),
+    };
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(`${STORAGE_PREFIX}${booking.publicCode}`, JSON.stringify(booking));
+    }
+    return booking;
+  }
+
+  async getBooking(publicCode: string): Promise<Booking | null> {
+    if (typeof window === "undefined") return null;
+    const stored = window.sessionStorage.getItem(`${STORAGE_PREFIX}${publicCode}`);
+    if (!stored) return null;
+    try {
+      return JSON.parse(stored) as Booking;
+    } catch {
+      return null;
+    }
+  }
+}
+
+export const bookingService: BookingService = new MockBookingService();
