@@ -1,8 +1,14 @@
-import { ArrowUpRight, ChevronDown, Clock3, Headphones, LockKeyhole, MessageCircle, Play, Sparkles, Video } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Headphones, MessageCircle, Sparkles, Video } from "lucide-react";
 import { Link } from "wouter";
+import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
-import { faqs, formatBRL, modalityDetails, navItems, readings, testimonials, type Modality } from "@/lib/content";
+import { faqs } from "@/data/faqs";
+import { modalityDetails, modalities } from "@/data/modalities";
+import { readings } from "@/data/readings";
+import { testimonials } from "@/data/testimonials";
 import { track } from "@/lib/analytics";
+import type { Modality } from "@/types/domain";
+import { formatPriceFrom, formatReadingDuration } from "@/utils/formatters";
 
 const modalityIcons: Record<Modality, typeof MessageCircle> = { message: MessageCircle, voice: Headphones, video: Video };
 
@@ -67,12 +73,12 @@ export default function Home() {
           <div className="readings-grid">
             {readings.map((reading, index) => (
               <article className={`reading-card ${reading.featured ? "reading-card-featured" : ""}`} key={reading.slug}>
-                <div className="reading-topline"><span>0{index + 1}</span><span>{reading.duration}</span></div>
+                <div className="reading-topline"><span>0{index + 1}</span><span>{formatReadingDuration(reading)}</span></div>
                 <div className="reading-icon">{reading.featured ? <Sparkles size={18} /> : <span>✦</span>}</div>
                 <span className="reading-eyebrow">{reading.eyebrow}</span>
                 <h3>{reading.name}</h3>
                 <p>{reading.description}</p>
-                <div className="reading-footer"><strong>{reading.priceLabel}</strong><Link href={`/leituras/${reading.slug}`} onClick={() => track("view_service", { service: reading.slug })}>Ver leitura <ArrowUpRight size={15} /></Link></div>
+                <div className="reading-footer"><strong>{formatPriceFrom(reading.price)}</strong><Link href={`/leituras/${reading.slug}`} onClick={() => track("view_service", { service: reading.slug })}>Ver leitura <ArrowUpRight size={15} /></Link></div>
               </article>
             ))}
           </div>
@@ -81,7 +87,7 @@ export default function Home() {
         <section className="section-pad modalities-section" id="modalidades">
           <div className="section-heading split-heading"><div><span className="section-kicker">O ENCONTRO</span><h2>Escolha como<br /><em>prefere conversar.</em></h2></div><p>O mesmo cuidado em diferentes formas de presença. Você sempre sabe o que vai pagar antes de agendar.</p></div>
           <div className="modalities-list">
-            {(Object.keys(modalityDetails) as Modality[]).map((modality, index) => {
+            {modalities.map((modality, index) => {
               const Icon = modalityIcons[modality];
               return <div className="modality-row" key={modality}><span className="modality-number">0{index + 1}</span><Icon size={20} strokeWidth={1.4} /><div className="modality-text"><h3>{modalityDetails[modality].name}</h3><p>{modalityDetails[modality].description}</p></div><span className="modality-note">{modalityDetails[modality].note}</span><Link href={`/agendar?modalidade=${modality}`} className="row-arrow" aria-label={`Agendar por ${modalityDetails[modality].name}`} onClick={() => track("select_modality", { modality })}><ArrowUpRight size={18} /></Link></div>;
             })}
@@ -89,7 +95,7 @@ export default function Home() {
         </section>
 
         <section className="process-section" id="como-funciona">
-          <div className="section-pad"><div className="section-heading"><span className="section-kicker">COMO FUNCIONA</span><h2>Um caminho simples<br /><em>até a sua pergunta.</em></h2></div><div className="process-grid">{["Escolha sua leitura.", "Escolha como prefere conversar.", "Reserve seu horário.", "Faça sua consulta com privacidade."].map((item, index) => <div className="process-step" key={item}><span>0{index + 1}</span><p>{item}</p></div>)}</div></div>
+          <div className="section-pad"><div className="section-heading"><span className="section-kicker">COMO FUNCIONA</span><h2>Um caminho simples<br /><em>até a sua pergunta.</em></h2></div><div className="process-grid">{["Escolha sua leitura.", "Escolha como prefere conversar.", "Envie sua questão ou reserve um horário.", "Receba sua leitura com privacidade."].map((item, index) => <div className="process-step" key={item}><span>0{index + 1}</span><p>{item}</p></div>)}</div></div>
         </section>
 
         <section className="section-pad about-section" id="sobre">
@@ -103,11 +109,7 @@ export default function Home() {
 
         <section className="final-cta-section"><div className="final-cta-inner"><span className="section-kicker">QUANDO VOCÊ ESTIVER PRONTA</span><h2>Abra espaço para<br /><em>olhar com clareza.</em></h2><Link href="/agendar" className="button button-primary" onClick={() => startBooking("final_cta")}>Agendar uma leitura <ArrowUpRight size={16} /></Link></div><span className="final-star">✦</span></section>
       </main>
-      <Footer />
+      <SiteFooter />
     </div>
   );
-}
-
-function Footer() {
-  return <footer className="site-footer"><div className="footer-main"><div className="footer-brand"><div className="wordmark"><span className="brand-mark"><Sparkles size={14} /></span><span>CELESTE</span><small>cartomancia</small></div><p>Leituras com cuidado,<br />privacidade e presença.</p></div><div className="footer-links"><div><span>EXPLORAR</span>{navItems.slice(0, 4).map((item) => <a href={item.href} key={item.href}>{item.label}</a>)}</div><div><span>LEGAL</span><a href="#">Política de Privacidade</a><a href="#">Termos de Uso</a><a href="https://instagram.com" target="_blank" rel="noreferrer">Instagram ↗</a></div></div></div><div className="footer-bottom"><span>© 2026 Celeste Cartomancia</span><span>Atendimento online · Brasil</span></div><p className="disclaimer">As leituras oferecidas pela Celeste têm caráter simbólico e reflexivo e não substituem orientação médica, psicológica, jurídica ou financeira profissional.</p></footer>;
 }

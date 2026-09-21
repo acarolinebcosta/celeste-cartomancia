@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Substituir celeste.example pelo domínio de produção antes da publicação. -->
+  <url><loc>https://celeste.example/</loc></url>
+  <url><loc>https://celeste.example/agendar</loc></url>
+  <url><loc>https://celeste.example/leituras/pergunta-direta</loc></url>
+  <url><loc>https://celeste.example/leituras/entre-caminhos</loc></url>
+  <url><loc>https://celeste.example/leituras/amor-relacoes</loc></url>
+  <url><loc>https://celeste.example/leituras/panorama-do-ciclo</loc></url>
+  <url><loc>https://celeste.example/leituras/leitura-profunda</loc></url>
+  <url><loc>https://celeste.example/privacidade</loc></url>
+  <url><loc>https://celeste.example/termos</loc></url>
+</urlset>

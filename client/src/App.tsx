@@ -1,27 +1,37 @@
-import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
-import ErrorBoundary from "./components/ErrorBoundary";
-import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-import ServiceDetail from "./pages/ServiceDetail";
-import Booking from "./pages/Booking";
-import AdminPlaceholder from "./pages/AdminPlaceholder";
+import AnalyticsConsent from "@/components/AnalyticsConsent";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import RouteEffects from "@/components/RouteEffects";
+import AdminPlaceholder from "@/pages/AdminPlaceholder";
+import Booking from "@/pages/Booking";
+import BookingConfirmation from "@/pages/BookingConfirmation";
+import Home from "@/pages/Home";
+import LegalPage from "@/pages/LegalPage";
+import NotFound from "@/pages/NotFound";
+import ServiceDetail from "@/pages/ServiceDetail";
 
 function Router() {
-  return <Switch>
-    <Route path="/" component={Home} />
-    <Route path="/agendar" component={Booking} />
-    <Route path="/admin" component={AdminPlaceholder} />
-    <Route path="/leituras/:slug" component={ServiceDetail} />
-    <Route path="/404" component={NotFound} />
-    <Route component={NotFound} />
-  </Switch>;
+  return (
+    <Switch>
+      <Route path="/" component={Home} />
+      <Route path="/agendar" component={Booking} />
+      <Route path="/agendamento/:publicCode" component={BookingConfirmation} />
+      <Route path="/leituras/:slug" component={ServiceDetail} />
+      <Route path="/termos">{() => <LegalPage kind="terms" />}</Route>
+      <Route path="/privacidade">{() => <LegalPage kind="privacy" />}</Route>
+      <Route path="/admin" component={AdminPlaceholder} />
+      <Route path="/404" component={NotFound} />
+      <Route component={NotFound} />
+    </Switch>
+  );
 }
 
-function App() {
-  return <ErrorBoundary><ThemeProvider defaultTheme="dark"><TooltipProvider><Toaster /><Router /></TooltipProvider></ThemeProvider></ErrorBoundary>;
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <RouteEffects />
+      <Router />
+      <AnalyticsConsent />
+    </ErrorBoundary>
+  );
 }
-
-export default App;
