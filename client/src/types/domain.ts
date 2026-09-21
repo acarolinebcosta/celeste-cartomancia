@@ -30,7 +30,7 @@ export type BookingDraft = {
   termsAccepted: boolean;
 };
 
-export type BookingStatus = "draft" | "pending_payment" | "confirmed" | "cancelled";
+export type BookingStatus = "pending_payment" | "confirmed" | "cancelled" | "expired";
 
 export type PaymentStatus =
   | "awaiting_payment"
@@ -41,11 +41,20 @@ export type PaymentStatus =
 
 export type Booking = {
   publicCode: string;
+  service: {
+    slug: string;
+    name: string;
+    durationMinutes: number | null;
+  };
   status: BookingStatus;
   paymentStatus: PaymentStatus;
-  readingName: string;
-  data: BookingDraft;
-  utms: Record<string, string>;
+  fulfillmentType: FulfillmentType;
+  modality: Modality | null;
+  scheduledStart: string | null;
+  timezone: string;
+  priceCents: number;
+  currency: "BRL";
+  expiresAt: string | null;
   createdAt: string;
 };
 

@@ -9,7 +9,8 @@ import { getReading, readings } from "@/data/readings";
 import { asyncQuestionSchema, customerSchema, type AsyncQuestionFormData, type CustomerFormData } from "@/features/booking/customerSchema";
 import { getBookingSteps, initializeBookingFromSearch, selectDate, selectModality, selectReading, stepLabels, type BookingStep } from "@/features/booking/bookingState";
 import { getStoredUtms, track } from "@/lib/analytics";
-import { availabilityService, type AvailabilitySlot, type AvailableDate } from "@/services/availabilityService";
+import { ApiError } from "@/lib/apiClient";
+import { availabilityService, usingMockApi, type AvailabilitySlot, type AvailableDate } from "@/services/availabilityService";
 import { bookingService } from "@/services/bookingService";
 import { paymentService, type PaymentMethod } from "@/services/paymentService";
 import type { BookingDraft, Modality, PaymentStatus, Reading } from "@/types/domain";
@@ -24,6 +25,7 @@ export default function Booking() {
   const [errors, setErrors] = useState<string[]>([]);
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([]);
   const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([]);
+  const [availabilityRevision, setAvailabilityRevision] = useState(0);
   const reading = getReading(booking.readingSlug);
   const steps = useMemo(() => getBookingSteps(reading), [reading]);
   const activeStep = steps[stepIndex];
@@ -34,22 +36,24 @@ export default function Booking() {
   useEffect(() => {
     let active = true;
     setAvailableDates([]);
-    void availabilityService.getAvailableDates(reading).then((dates) => {
-      if (active) setAvailableDates(dates);
-    });
+    if (reading.fulfillmentType === "scheduled" && booking.modality) {
+      void availabilityService.getAvailableDates(reading, booking.modality)
+        .then((dates) => { if (active) setAvailableDates(dates); })
+        .catch(() => { if (active) setErrors(["Não foi possível carregar a agenda. Tente novamente."]); });
+    }
     return () => { active = false; };
-  }, [reading]);
+  }, [availabilityRevision, booking.modality, reading]);
 
   useEffect(() => {
     let active = true;
     setAvailableSlots([]);
-    if (reading.fulfillmentType === "scheduled" && booking.date) {
-      void availabilityService.getAvailableSlots(reading, booking.date).then((slots) => {
-        if (active) setAvailableSlots(slots);
-      });
+    if (reading.fulfillmentType === "scheduled" && booking.date && booking.modality) {
+      void availabilityService.getAvailableSlots(reading, booking.date, booking.modality)
+        .then((slots) => { if (active) setAvailableSlots(slots); })
+        .catch(() => { if (active) setErrors(["Não foi possível carregar os horários. Tente novamente."]); });
     }
     return () => { active = false; };
-  }, [booking.date, reading]);
+  }, [availabilityRevision, booking.date, booking.modality, reading]);
 
   const goBack = () => {
     setErrors([]);
@@ -94,9 +98,25 @@ export default function Booking() {
   };
 
   const createPreview = async (method: PaymentMethod) => {
-    const preview = await bookingService.createBooking({ reading, data: booking, utms: getStoredUtms() });
-    await paymentService.createCheckout(preview.publicCode, method);
-    setLocation(`/agendamento/${preview.publicCode}`);
+    setErrors([]);
+    try {
+      const preview = await bookingService.createBooking({ reading, data: booking, utms: getStoredUtms() });
+      await paymentService.createCheckout(preview.publicCode, method);
+      setLocation(`/agendamento/${preview.publicCode}`);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "SLOT_UNAVAILABLE") {
+        setBooking((current) => ({ ...current, time: "" }));
+        setAvailabilityRevision((value) => value + 1);
+        setStepIndex(Math.max(0, steps.indexOf("schedule")));
+        setErrors(["Esse horário acabou de ficar indisponível. Escolha outro horário para continuar."]);
+        return;
+      }
+      if (error instanceof ApiError && error.code === "VALIDATION_ERROR") {
+        setErrors(["Revise os dados informados antes de continuar."]);
+        return;
+      }
+      setErrors(["Não foi possível criar a pré-reserva. Tente novamente em instantes."]);
+    }
   };
 
   return (
@@ -113,7 +133,7 @@ export default function Booking() {
           <section className="booking-card" aria-live="polite">
             {activeStep === "reading" && <ReadingStep readings={visibleReadings} selected={booking.readingSlug} modalityFilter={modalityFilter} onClearFilter={() => setModalityFilter(null)} onSelect={chooseReading} />}
             {activeStep === "modality" && <ModalityStep reading={reading} selected={booking.modality} onSelect={(value) => { setBooking((current) => selectModality(current, value)); track("select_modality", { modality: value, service: reading.slug }); }} />}
-            {activeStep === "schedule" && <ScheduleStep dates={availableDates} slots={availableSlots} booking={booking} reading={reading} onDate={(value) => { setBooking((current) => selectDate(current, value)); track("select_date", { date: value, service: reading.slug }); }} onTime={(value) => { setBooking((current) => ({ ...current, time: value })); track("select_time", { time: value, service: reading.slug }); }} />}
+            {activeStep === "schedule" && <ScheduleStep dates={availableDates} slots={availableSlots} booking={booking} reading={reading} isMock={usingMockApi} onDate={(value) => { setBooking((current) => selectDate(current, value)); track("select_date", { date: value, service: reading.slug }); }} onTime={(value) => { setBooking((current) => ({ ...current, time: value })); track("select_time", { time: value, service: reading.slug }); }} />}
             {activeStep === "question" && <QuestionStep defaultValue={booking.question} onBack={goBack} onSubmit={saveQuestion} />}
             {activeStep === "details" && <DetailsStep booking={booking} onBack={goBack} onSubmit={saveCustomer} />}
             {activeStep === "summary" && <SummaryStep booking={booking} reading={reading} />}
@@ -154,8 +174,8 @@ function ModalityStep({ reading, selected, onSelect }: { reading: Reading; selec
   return <div><StepIntro eyebrow="02 · MODALIDADE" title="Como prefere conversar?" copy="Escolha a forma de presença que combina com este momento." /><div className="booking-options">{reading.availableModalities.map((modality) => <button type="button" className={`booking-option modality-option ${selected === modality ? "selected" : ""}`} aria-pressed={selected === modality} key={modality} onClick={() => onSelect(modality)}><span><strong>{modalityDetails[modality].name}</strong><small>{modalityDetails[modality].description}</small></span><span className="modality-icon">{modality === "video" ? <Video size={18} /> : <MessageCircle size={18} />}</span></button>)}</div><p className="quiet-note"><Clock3 size={15} /> Sem cobrança por minuto. O valor exibido é o valor da consulta.</p></div>;
 }
 
-function ScheduleStep({ dates, slots, booking, reading, onDate, onTime }: { dates: AvailableDate[]; slots: AvailabilitySlot[]; booking: BookingDraft; reading: Reading; onDate: (value: string) => void; onTime: (value: string) => void }) {
-  return <div><StepIntro eyebrow="03 · DATA E HORÁRIO" title="Encontre um momento." copy="Mostramos disponibilidade demonstrativa. O fuso considerado é America/Sao_Paulo." /><div className="date-picker"><div className="date-list">{dates.map(({ isoDate, date }) => <button type="button" key={isoDate} className={`date-option ${booking.date === isoDate ? "selected" : ""}`} aria-pressed={booking.date === isoDate} onClick={() => onDate(isoDate)}><span>{date.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}</span><strong>{formatDateShort(date)}</strong></button>)}</div>{booking.date ? <div className="time-list"><span className="section-kicker">HORÁRIOS EM {formatDateLong(new Date(`${booking.date}T12:00:00`))}</span><div>{slots.map(({ startTime }) => <button type="button" key={startTime} className={`time-option ${booking.time === startTime ? "selected" : ""}`} aria-pressed={booking.time === startTime} onClick={() => onTime(startTime)}>{startTime}</button>)}</div></div> : <p className="quiet-note">Escolha um dia para ver os horários de {formatReadingDuration(reading)}.</p>}</div></div>;
+function ScheduleStep({ dates, slots, booking, reading, isMock, onDate, onTime }: { dates: AvailableDate[]; slots: AvailabilitySlot[]; booking: BookingDraft; reading: Reading; isMock: boolean; onDate: (value: string) => void; onTime: (value: string) => void }) {
+  return <div><StepIntro eyebrow="03 · DATA E HORÁRIO" title="Encontre um momento." copy={`${isMock ? "Mostramos disponibilidade demonstrativa." : "Mostramos os horários disponíveis."} O fuso considerado é America/Sao_Paulo.`} /><div className="date-picker"><div className="date-list">{dates.map(({ isoDate, date }) => <button type="button" key={isoDate} className={`date-option ${booking.date === isoDate ? "selected" : ""}`} aria-pressed={booking.date === isoDate} onClick={() => onDate(isoDate)}><span>{date.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}</span><strong>{formatDateShort(date)}</strong></button>)}</div>{booking.date ? <div className="time-list"><span className="section-kicker">HORÁRIOS EM {formatDateLong(new Date(`${booking.date}T12:00:00`))}</span><div>{slots.map(({ startTime }) => <button type="button" key={startTime} className={`time-option ${booking.time === startTime ? "selected" : ""}`} aria-pressed={booking.time === startTime} onClick={() => onTime(startTime)}>{startTime}</button>)}</div></div> : <p className="quiet-note">Escolha um dia para ver os horários de {formatReadingDuration(reading)}.</p>}</div></div>;
 }
 
 function QuestionStep({ defaultValue, onBack, onSubmit }: { defaultValue: string; onBack: () => void; onSubmit: (data: AsyncQuestionFormData) => void }) {
@@ -189,7 +209,7 @@ function PaymentStep({ reading, onBack, onConfirm }: { reading: Reading; onBack:
     try { await onConfirm(method); } finally { setSubmitting(false); }
   };
 
-  return <div><StepIntro eyebrow="PAGAMENTO · DEMONSTRAÇÃO" title="Escolha como continuar." copy="Nenhuma cobrança será realizada. A integração de pagamento será montada aqui futuramente." /><div className="payment-methods" role="group" aria-label="Forma de pagamento demonstrativa"><button type="button" className={method === "pix" ? "selected" : ""} aria-pressed={method === "pix"} onClick={() => setMethod("pix")}><QrCode size={19} /> Pix</button><button type="button" className={method === "card" ? "selected" : ""} aria-pressed={method === "card"} onClick={() => setMethod("card")}><CreditCard size={19} /> Cartão</button></div><div className="payment-placeholder"><ShieldCheck size={20} /><div><strong>{method === "pix" ? "Área reservada para checkout Pix" : "Área reservada para o componente seguro de cartão"}</strong><p>Não informe dados reais. Este frontend não processa nem armazena dados de pagamento.</p></div></div><div className={`payment-status status-${status}`} role="status"><span>Status visual</span><strong>{paymentStatusLabels[status]}</strong>{status === "approved" && <small>Aprovação demonstrativa manual; não gera evento de compra.</small>}</div>{import.meta.env.DEV && <label className="dev-status-control" htmlFor="mock-payment-status">Simular estado visual em desenvolvimento<select id="mock-payment-status" value={status} onChange={(event) => setStatus(event.target.value as PaymentStatus)}>{Object.entries(paymentStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}<div className="booking-actions"><button className="button button-ghost" type="button" onClick={onBack}><ArrowLeft size={15} /> Voltar</button><button className="button button-primary" type="button" disabled={submitting} onClick={confirm}>Criar pré-reserva demonstrativa <ArrowRight size={15} /></button></div><p className="payment-disclaimer"><ShieldCheck size={14} /> A confirmação real dependerá do backend e do pagamento verificado. Nenhum evento de compra é emitido neste mock.</p></div>;
+  return <div><StepIntro eyebrow="PAGAMENTO · DEMONSTRAÇÃO" title="Escolha como continuar." copy="Nenhuma cobrança será realizada. A integração de pagamento será montada aqui futuramente." /><div className="payment-methods" role="group" aria-label="Forma de pagamento demonstrativa"><button type="button" className={method === "pix" ? "selected" : ""} aria-pressed={method === "pix"} onClick={() => setMethod("pix")}><QrCode size={19} /> Pix</button><button type="button" className={method === "card" ? "selected" : ""} aria-pressed={method === "card"} onClick={() => setMethod("card")}><CreditCard size={19} /> Cartão</button></div><div className="payment-placeholder"><ShieldCheck size={20} /><div><strong>{method === "pix" ? "Área reservada para checkout Pix" : "Área reservada para o componente seguro de cartão"}</strong><p>Não informe dados reais. Este frontend não processa nem armazena dados de pagamento.</p></div></div><div className={`payment-status status-${status}`} role="status"><span>Status visual</span><strong>{paymentStatusLabels[status]}</strong>{status === "approved" && <small>Aprovação demonstrativa manual; não gera evento de compra.</small>}</div>{import.meta.env.DEV && <label className="dev-status-control" htmlFor="mock-payment-status">Simular estado visual em desenvolvimento<select id="mock-payment-status" value={status} onChange={(event) => setStatus(event.target.value as PaymentStatus)}>{Object.entries(paymentStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}<div className="booking-actions"><button className="button button-ghost" type="button" onClick={onBack}><ArrowLeft size={15} /> Voltar</button><button className="button button-primary" type="button" disabled={submitting} onClick={confirm}>Criar pré-reserva <ArrowRight size={15} /></button></div><p className="payment-disclaimer"><ShieldCheck size={14} /> A confirmação real dependerá do pagamento verificado em uma próxima fase. Nenhum evento de compra é emitido neste mock.</p></div>;
 }
 
 function BookingSummary({ booking, reading }: { booking: BookingDraft; reading: Reading }) {
