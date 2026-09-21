@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:frontend": "vite",
     "dev:server": "tsx watch server/server.ts",
+    "start:server": "node dist/backend/server/server.js",
     "build": "pnpm build:frontend && pnpm build:server",
     "build:frontend": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
@@ -15,6 +16,8 @@
     "check:frontend": "tsc --noEmit",
     "check:server": "tsc -p tsconfig.server.json --noEmit",
     "lint": "eslint .",
+    "lint:frontend": "eslint client vite.config.ts vitest.config.ts",
+    "lint:server": "eslint server prisma prisma.config.ts vitest.server.config.ts",
     "test": "pnpm test:frontend && pnpm test:server",
     "test:frontend": "vitest run",
     "test:server": "vitest run --config vitest.server.config.ts",
@@ -67,9 +70,6 @@
     "vitest": "^3.2.4"
   },
   "packageManager": "pnpm@10.15.1",
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  },
   "engines": {
     "node": ">=22 <27"
   }
