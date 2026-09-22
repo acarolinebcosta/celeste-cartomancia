@@ -5,6 +5,7 @@ import type { CreateBookingPayload } from "../../schemas/bookingSchemas.js";
 import type { AvailabilityService } from "../../services/availabilityService.js";
 import { BookingService } from "../../services/bookingService.js";
 import { ServiceCatalogService } from "../../services/serviceCatalogService.js";
+import { PublicCodeCollisionError } from "../../errors/repositoryErrors.js";
 
 const asyncService: ServiceRecord = {
   id: "async-id",
@@ -45,11 +46,14 @@ const asyncPayload: CreateBookingPayload = {
   utms: {},
 };
 
-function setup(service: ServiceRecord, replayed = false) {
+function setup(service: ServiceRecord, replayed = false, options: { collisions?: number; codes?: string[] } = {}) {
   let captured: AtomicBookingInput | undefined;
+  let attempts = 0;
   const serviceRepository: ServiceRepository = { listActive: async () => [service], findBySlug: async () => service };
   const bookingRepository: BookingRepository = {
     createAtomic: async (input) => {
+      attempts += 1;
+      if (attempts <= (options.collisions ?? 0)) throw new PublicCodeCollisionError();
       captured = input;
       const booking: BookingRecord = {
         id: "internal-id",
@@ -86,16 +90,16 @@ function setup(service: ServiceRecord, replayed = false) {
     bookingRepository,
     { timezone: "America/Sao_Paulo", holdMinutes: 15, termsVersion: "terms-v1", privacyVersion: "privacy-v1" },
     () => new Date("2026-10-01T12:00:00Z"),
-    () => "CEL-234567",
+    () => options.codes?.shift() ?? "CEL-23456789AB",
   );
-  return { bookingService, captured: () => captured };
+  return { bookingService, captured: () => captured, attempts: () => attempts };
 }
 
 describe("BookingService", () => {
   it("cria async sem agenda usando preço e consentimento do servidor", async () => {
     const context = setup(asyncService);
     const result = await context.bookingService.create({ ...asyncPayload, utms: { utm_source: "newsletter" } }, "async-key-123");
-    expect(result.booking).toMatchObject({ publicCode: "CEL-234567", priceCents: 4_900, status: "PENDING_PAYMENT", scheduledStart: null });
+    expect(result.booking).toMatchObject({ publicCode: "CEL-23456789AB", priceCents: 4_900, status: "PENDING_PAYMENT", scheduledStart: null });
     expect(result.booking).not.toHaveProperty("id");
     expect(context.captured()).toMatchObject({
       priceCents: 4_900,
@@ -144,6 +148,16 @@ describe("BookingService", () => {
 
   it("retorna somente projeção pública e trata booking ausente", async () => {
     const { bookingService } = setup(asyncService);
-    await expect(bookingService.getByPublicCode("CEL-234567")).rejects.toMatchObject({ code: "BOOKING_NOT_FOUND" });
+    await expect(bookingService.getByPublicCode("CEL-23456789AB")).rejects.toMatchObject({ code: "BOOKING_NOT_FOUND" });
+  });
+
+  it("CT23 tenta um novo código somente quando há colisão de publicCode", async () => {
+    const context = setup(asyncService, false, {
+      collisions: 1,
+      codes: ["CEL-23456789AB", "CEL-BCDEFGHJKM"],
+    });
+    const result = await context.bookingService.create(asyncPayload, "collision-key-123");
+    expect(context.attempts()).toBe(2);
+    expect(result.booking.publicCode).toBe("CEL-BCDEFGHJKM");
   });
 });

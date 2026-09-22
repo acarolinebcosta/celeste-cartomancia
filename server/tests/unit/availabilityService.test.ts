@@ -77,4 +77,19 @@ describe("AvailabilityService", () => {
         bufferMinutes: 15,
       });
   });
+
+  it("CT22 usa o buffer da janela que originou o slot", async () => {
+    const service = makeService({
+      rules: [
+        { dayOfWeek: 5, startMinute: 540, endMinute: 720, bufferMinutes: 15 },
+        { dayOfWeek: 5, startMinute: 840, endMinute: 1080, bufferMinutes: 30 },
+      ],
+    });
+    await expect(service.assertSlotAvailable({
+      serviceSlug: scheduled.slug,
+      modality: "VOICE",
+      date: "2026-10-02",
+      time: "14:00",
+    })).resolves.toMatchObject({ bufferMinutes: 30 });
+  });
 });

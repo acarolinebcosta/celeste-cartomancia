@@ -44,7 +44,7 @@ export function bookingRoutes(service: BookingService): FastifyPluginAsync {
         params: {
           type: "object",
           required: ["publicCode"],
-          properties: { publicCode: { type: "string", pattern: "^CEL-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$" } },
+          properties: { publicCode: { type: "string", pattern: "^CEL-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{10}$" } },
         },
         response: {
           200: publicBookingSchema,

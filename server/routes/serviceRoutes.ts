@@ -12,7 +12,7 @@ export function serviceRoutes(catalog: ServiceCatalogService): FastifyPluginAsyn
             type: "array",
             items: {
               type: "object",
-              required: ["slug", "name", "eyebrow", "description", "audience", "explores", "fulfillmentType", "durationMinutes", "priceCents", "availableModalities"],
+              required: ["slug", "name", "eyebrow", "description", "audience", "explores", "fulfillmentType", "durationMinutes", "priceCents", "active", "availableModalities"],
               properties: {
                 slug: { type: "string" },
                 name: { type: "string" },
@@ -23,6 +23,7 @@ export function serviceRoutes(catalog: ServiceCatalogService): FastifyPluginAsyn
                 fulfillmentType: { enum: ["async", "scheduled"] },
                 durationMinutes: { anyOf: [{ type: "integer" }, { type: "null" }] },
                 priceCents: { type: "integer" },
+                active: { type: "boolean" },
                 featured: { type: "boolean" },
                 availableModalities: { type: "array", items: { enum: ["message", "voice", "video"] } },
                 estimatedDelivery: { type: "string" },

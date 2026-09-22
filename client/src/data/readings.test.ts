@@ -6,7 +6,7 @@ import { formatBRL, formatPriceFrom, formatReadingDuration } from "@/utils/forma
 describe("catálogo de leituras", () => {
   it("mantém slugs únicos e preços numéricos positivos", () => {
     expect(new Set(readings.map(({ slug }) => slug)).size).toBe(readings.length);
-    expect(readings.every(({ price }) => Number.isFinite(price) && price > 0)).toBe(true);
+    expect(readings.every(({ priceCents }) => Number.isInteger(priceCents) && priceCents > 0)).toBe(true);
   });
 
   it("modela Pergunta Direta como assíncrona e somente por mensagem", () => {
@@ -23,8 +23,8 @@ describe("catálogo de leituras", () => {
   });
 
   it("deriva preço e modalidades sem fontes duplicadas", () => {
-    expect(formatBRL(129)).toBe("R$ 129");
-    expect(formatPriceFrom(129)).toBe("A partir de R$ 129");
+    expect(formatBRL(12_900)).toBe("R$ 129");
+    expect(formatPriceFrom(12_900)).toBe("A partir de R$ 129");
     expect(formatModalities(["voice", "video"])).toBe("Chamada de voz ou Videochamada");
   });
 });

@@ -3,6 +3,8 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../../app.js";
 import type { AppConfig } from "../../config/env.js";
+import { PrismaBookingRepository } from "../../repositories/prismaBookingRepository.js";
+import type { AtomicBookingInput } from "../../repositories/contracts.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeDatabase = databaseUrl ? describe : describe.skip;
@@ -59,6 +61,20 @@ async function seed(prisma: PrismaClient) {
       modalities: { create: [{ modality: Modality.VOICE }, { modality: Modality.VIDEO }] },
     },
   });
+  const deep = await prisma.service.create({
+    data: {
+      slug: "leitura-profunda",
+      name: "Leitura Profunda",
+      eyebrow: "Para olhar com tempo",
+      description: "Descrição",
+      audience: "Público",
+      explores: ["camadas"],
+      fulfillmentType: "SCHEDULED",
+      durationMinutes: 60,
+      priceCents: 17_900,
+      modalities: { create: [{ modality: Modality.VOICE }, { modality: Modality.VIDEO }] },
+    },
+  });
   await prisma.availabilityRule.createMany({
     data: [2, 3, 4, 5, 6].map((dayOfWeek) => ({
       dayOfWeek,
@@ -68,7 +84,7 @@ async function seed(prisma: PrismaClient) {
       timezone: "America/Sao_Paulo",
     })),
   });
-  return { direct, scheduled };
+  return { direct, scheduled, deep };
 }
 
 describeDatabase("Booking API com PostgreSQL", () => {
@@ -108,6 +124,40 @@ describeDatabase("Booking API com PostgreSQL", () => {
     url: "/api/bookings",
     headers: { "idempotency-key": key },
     payload,
+  });
+
+  const atomicScheduledInput = (
+    serviceId: string,
+    publicCode: string,
+    idempotencyKey: string,
+    scheduledStart: Date,
+    scheduledEnd: Date,
+  ): AtomicBookingInput => ({
+    publicCode,
+    serviceId,
+    fulfillmentType: "SCHEDULED",
+    modality: "VIDEO",
+    customerName: "Integration Test",
+    customerEmail: "integration@example.com",
+    customerWhatsapp: "51999999999",
+    question: null,
+    context: null,
+    scheduledStart,
+    scheduledEnd,
+    timezone: "America/Sao_Paulo",
+    priceCents: 12_900,
+    expiresAt: new Date("2026-10-01T12:15:00Z"),
+    utmSource: null,
+    utmMedium: null,
+    utmCampaign: null,
+    utmContent: null,
+    utmTerm: null,
+    termsVersion: "2026-09-draft",
+    privacyVersion: "2026-09-draft",
+    termsAcceptedAt: now,
+    idempotencyKey,
+    idempotencyHash: `hash-${idempotencyKey}`,
+    reservation: { lockDate: "2026-10-02", bufferMinutes: 15 },
   });
 
   it("expõe healthcheck e somente serviços ativos com preço em centavos", async () => {
@@ -244,13 +294,21 @@ describeDatabase("Booking API com PostgreSQL", () => {
     expect(response.json().error.code).toBe("IDEMPOTENCY_CONFLICT");
   });
 
-  it("CT14 consulta por código sem expor ID nem dados pessoais", async () => {
+  it("CT14/CT25 consulta por código sem expor ID, PII ou campos técnicos", async () => {
     const created = await postBooking(asyncPayload, "ct14-public-code");
     const response = await app.inject({ method: "GET", url: `/api/bookings/${created.json().publicCode}` });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).not.toHaveProperty("id");
-    expect(response.json()).not.toHaveProperty("customerEmail");
-    expect(response.json()).not.toHaveProperty("question");
+    for (const field of [
+      "id",
+      "serviceId",
+      "customerName",
+      "customerEmail",
+      "customerWhatsapp",
+      "question",
+      "context",
+      "idempotencyKey",
+      "idempotencyHash",
+    ]) expect(response.json()).not.toHaveProperty(field);
   });
 
   it("CT15/CT16 rejeita serviço inexistente e inativo", async () => {
@@ -281,8 +339,60 @@ describeDatabase("Booking API com PostgreSQL", () => {
   });
 
   it("retorna BOOKING_NOT_FOUND para código público ausente", async () => {
-    const response = await app.inject({ method: "GET", url: "/api/bookings/CEL-234567" });
+    const response = await app.inject({ method: "GET", url: "/api/bookings/CEL-23456789AB" });
     expect(response.statusCode).toBe(404);
     expect(response.json().error.code).toBe("BOOKING_NOT_FOUND");
+  });
+
+  it("CT19 bloqueia overlap real entre sessões de 60 e 30 minutos", async () => {
+    const deepPayload = {
+      ...scheduledPayload,
+      serviceSlug: "leitura-profunda",
+      time: "09:00",
+    };
+    const shortPayload = { ...scheduledPayload, time: "09:45" };
+    const responses = await Promise.all([
+      postBooking(deepPayload, "ct19-deep-session"),
+      postBooking(shortPayload, "ct19-short-session"),
+    ]);
+    expect(responses.map(({ statusCode }) => statusCode).sort()).toEqual([201, 409]);
+    expect(responses.find(({ statusCode }) => statusCode === 409)?.json().error.code).toBe("SLOT_UNAVAILABLE");
+    expect(await prisma.booking.count({ where: { status: "PENDING_PAYMENT" } })).toBe(1);
+  });
+
+  it("CT20 rejeita overlap dentro do buffer na proteção transacional", async () => {
+    expect((await postBooking(scheduledPayload, "ct20-first")).statusCode).toBe(201);
+    const service = await prisma.service.findUniqueOrThrow({ where: { slug: "amor-relacoes" } });
+    const repository = new PrismaBookingRepository(prisma);
+    await expect(repository.createAtomic(atomicScheduledInput(
+      service.id,
+      "CEL-CT20BUFFER",
+      "ct20-buffer-zone",
+      new Date("2026-10-02T12:40:00Z"),
+      new Date("2026-10-02T13:10:00Z"),
+    ), now)).rejects.toMatchObject({ code: "SLOT_UNAVAILABLE" });
+  });
+
+  it("CT21 aceita reserva exatamente fora da zona de buffer", async () => {
+    expect((await postBooking(scheduledPayload, "ct21-first")).statusCode).toBe(201);
+    const service = await prisma.service.findUniqueOrThrow({ where: { slug: "amor-relacoes" } });
+    const repository = new PrismaBookingRepository(prisma);
+    await expect(repository.createAtomic(atomicScheduledInput(
+      service.id,
+      "CEL-CT21OUTSID",
+      "ct21-outside-buffer",
+      new Date("2026-10-02T12:45:00Z"),
+      new Date("2026-10-02T13:15:00Z"),
+    ), now)).resolves.toMatchObject({ replayed: false });
+    expect(await prisma.booking.count({ where: { status: "PENDING_PAYMENT" } })).toBe(2);
+  });
+
+  it("impede exceções de disponibilidade com janela parcial ou inválida", async () => {
+    await expect(prisma.availabilityException.create({
+      data: { date: new Date("2026-10-03T00:00:00Z"), available: true, startMinute: 540, endMinute: null, timezone: "America/Sao_Paulo" },
+    })).rejects.toBeTruthy();
+    await expect(prisma.availabilityException.create({
+      data: { date: new Date("2026-10-03T00:00:00Z"), available: true, startMinute: 900, endMinute: 800, timezone: "America/Sao_Paulo" },
+    })).rejects.toBeTruthy();
   });
 });

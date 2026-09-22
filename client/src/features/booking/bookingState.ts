@@ -1,10 +1,13 @@
-import { findReading, readings } from "@/data/readings";
+import { mockReadings } from "@/data/readings";
 import { isModality } from "@/data/modalities";
 import type { BookingDraft, Modality, Reading } from "@/types/domain";
 
-export const emptyBooking: BookingDraft = {
-  readingSlug: readings[0].slug,
-  modality: "message",
+export function createEmptyBooking(readings: Reading[]): BookingDraft {
+  const firstReading = readings[0];
+  if (!firstReading) throw new Error("Booking requires at least one active reading.");
+  return {
+  readingSlug: firstReading.slug,
+  modality: firstReading.fulfillmentType === "async" ? "message" : null,
   date: "",
   time: "",
   question: "",
@@ -13,16 +16,20 @@ export const emptyBooking: BookingDraft = {
   whatsapp: "",
   context: "",
   termsAccepted: false,
-};
+  };
+}
+
+export const emptyBooking = createEmptyBooking(mockReadings);
 
 export type BookingQueryState = {
   booking: BookingDraft;
   modalityFilter: Modality | null;
 };
 
-export function initializeBookingFromSearch(search: string): BookingQueryState {
+export function initializeBookingFromSearch(search: string, readings: Reading[] = mockReadings): BookingQueryState {
+  const empty = createEmptyBooking(readings);
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  const requestedReading = findReading(params.get("servico"));
+  const requestedReading = readings.find((reading) => reading.slug === params.get("servico"));
   const requestedModality = isModality(params.get("modalidade")) ? params.get("modalidade") as Modality : null;
   const hasExplicitReading = Boolean(requestedReading);
 
@@ -30,7 +37,7 @@ export function initializeBookingFromSearch(search: string): BookingQueryState {
     const compatibleReading = readings.find((reading) => reading.availableModalities.includes(requestedModality));
     return {
       booking: {
-        ...emptyBooking,
+        ...empty,
         readingSlug: compatibleReading?.slug ?? readings[0].slug,
         modality: compatibleReading ? requestedModality : null,
       },
@@ -44,7 +51,7 @@ export function initializeBookingFromSearch(search: string): BookingQueryState {
     : reading.fulfillmentType === "async" ? "message" : null;
 
   return {
-    booking: { ...emptyBooking, readingSlug: reading.slug, modality },
+    booking: { ...empty, readingSlug: reading.slug, modality },
     modalityFilter: null,
   };
 }

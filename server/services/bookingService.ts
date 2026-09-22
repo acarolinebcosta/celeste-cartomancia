@@ -2,6 +2,7 @@ import { createPayloadHash } from "../domain/idempotency.js";
 import { createPublicCode } from "../domain/publicCode.js";
 import { toPublicBooking } from "../domain/types.js";
 import { errors } from "../errors/appError.js";
+import { PublicCodeCollisionError } from "../errors/repositoryErrors.js";
 import type { BookingRepository } from "../repositories/contracts.js";
 import type { CreateBookingPayload } from "../schemas/bookingSchemas.js";
 import { toDomainModality } from "../schemas/bookingSchemas.js";
@@ -9,6 +10,7 @@ import { AvailabilityService } from "./availabilityService.js";
 import { ServiceCatalogService } from "./serviceCatalogService.js";
 
 type Clock = () => Date;
+const MAX_PUBLIC_CODE_ATTEMPTS = 3;
 
 export type BookingServiceConfig = {
   timezone: string;
@@ -66,8 +68,7 @@ export class BookingService {
       reservation = { lockDate: payload.date, bufferMinutes: slot.bufferMinutes };
     }
 
-    const result = await this.bookings.createAtomic({
-      publicCode: this.publicCodeFactory(),
+    const bookingInput = {
       serviceId: service.id,
       fulfillmentType: service.fulfillmentType,
       modality,
@@ -92,7 +93,21 @@ export class BookingService {
       idempotencyKey,
       idempotencyHash,
       reservation,
-    }, now);
+    };
+
+    let result;
+    for (let attempt = 1; attempt <= MAX_PUBLIC_CODE_ATTEMPTS; attempt += 1) {
+      try {
+        result = await this.bookings.createAtomic({
+          ...bookingInput,
+          publicCode: this.publicCodeFactory(),
+        }, now);
+        break;
+      } catch (error) {
+        if (!(error instanceof PublicCodeCollisionError) || attempt === MAX_PUBLIC_CODE_ATTEMPTS) throw error;
+      }
+    }
+    if (!result) throw new Error("Public code generation exhausted without a repository result.");
 
     return { booking: toPublicBooking(result.booking), replayed: result.replayed };
   }

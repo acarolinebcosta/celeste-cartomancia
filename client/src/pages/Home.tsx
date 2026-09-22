@@ -2,9 +2,9 @@ import { ArrowUpRight, ChevronDown, Headphones, MessageCircle, Sparkles, Video }
 import { Link } from "wouter";
 import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
+import { useServiceCatalog } from "@/contexts/ServiceCatalogContext";
 import { faqs } from "@/data/faqs";
 import { modalityDetails, modalities } from "@/data/modalities";
-import { readings } from "@/data/readings";
 import { testimonials } from "@/data/testimonials";
 import { track } from "@/lib/analytics";
 import type { Modality } from "@/types/domain";
@@ -13,6 +13,7 @@ import { formatPriceFrom, formatReadingDuration } from "@/utils/formatters";
 const modalityIcons: Record<Modality, typeof MessageCircle> = { message: MessageCircle, voice: Headphones, video: Video };
 
 export default function Home() {
+  const catalog = useServiceCatalog();
   const startBooking = (source: string) => {
     track("begin_booking", { source });
   };
@@ -71,14 +72,17 @@ export default function Home() {
         <section className="section-pad readings-section" id="leituras">
           <div className="section-heading"><span className="section-kicker">LEITURAS</span><h2>Uma leitura para cada<br /><em>momento de pergunta.</em></h2><p>Escolha com calma. O valor exibido é o valor da consulta — sem cobrança por minuto.</p></div>
           <div className="readings-grid">
-            {readings.map((reading, index) => (
+            {catalog.loading && <CatalogMessage message="Carregando leituras…" />}
+            {catalog.error && <CatalogMessage message={catalog.error} onRetry={catalog.reload} />}
+            {!catalog.loading && !catalog.error && catalog.services.length === 0 && <CatalogMessage message="Nenhuma leitura está disponível no momento." />}
+            {catalog.services.map((reading, index) => (
               <article className={`reading-card ${reading.featured ? "reading-card-featured" : ""}`} key={reading.slug}>
                 <div className="reading-topline"><span>0{index + 1}</span><span>{formatReadingDuration(reading)}</span></div>
                 <div className="reading-icon">{reading.featured ? <Sparkles size={18} /> : <span>✦</span>}</div>
                 <span className="reading-eyebrow">{reading.eyebrow}</span>
                 <h3>{reading.name}</h3>
                 <p>{reading.description}</p>
-                <div className="reading-footer"><strong>{formatPriceFrom(reading.price)}</strong><Link href={`/leituras/${reading.slug}`} onClick={() => track("view_service", { service: reading.slug })}>Ver leitura <ArrowUpRight size={15} /></Link></div>
+                <div className="reading-footer"><strong>{formatPriceFrom(reading.priceCents)}</strong><Link href={`/leituras/${reading.slug}`} onClick={() => track("view_service", { service: reading.slug })}>Ver leitura <ArrowUpRight size={15} /></Link></div>
               </article>
             ))}
           </div>
@@ -112,4 +116,8 @@ export default function Home() {
       <SiteFooter />
     </div>
   );
+}
+
+function CatalogMessage({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return <div className="reading-card catalog-message" role={onRetry ? "alert" : "status"}><p>{message}</p>{onRetry && <button className="inline-link" type="button" onClick={onRetry}>Tentar novamente</button>}</div>;
 }

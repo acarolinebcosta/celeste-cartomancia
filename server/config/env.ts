@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DateTime } from "luxon";
 
 const booleanFromEnv = z.string().optional().transform((value) => value !== "false");
 
@@ -9,7 +10,10 @@ const envSchema = z.object({
   API_HOST: z.string().default("0.0.0.0"),
   FRONTEND_ORIGIN: z.string().url().default("http://localhost:5173"),
   BOOKING_HOLD_MINUTES: z.coerce.number().int().min(1).max(60).default(15),
-  BUSINESS_TIMEZONE: z.string().default("America/Sao_Paulo"),
+  BUSINESS_TIMEZONE: z.string().refine(
+    (timezone) => DateTime.now().setZone(timezone).isValid,
+    "BUSINESS_TIMEZONE must be a valid IANA timezone",
+  ).default("America/Sao_Paulo"),
   TERMS_VERSION: z.string().min(1).default("2026-09-draft"),
   PRIVACY_VERSION: z.string().min(1).default("2026-09-draft"),
   ENABLE_SWAGGER: booleanFromEnv,

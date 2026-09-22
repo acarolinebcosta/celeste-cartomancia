@@ -18,6 +18,7 @@ export class ServiceCatalogService {
       fulfillmentType: lower(service.fulfillmentType),
       durationMinutes: service.durationMinutes,
       priceCents: service.priceCents,
+      active: service.active,
       featured: service.featured || undefined,
       availableModalities: service.modalities.map(lower),
       estimatedDelivery: service.estimatedDelivery ?? undefined,

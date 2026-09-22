@@ -34,7 +34,7 @@ export const availabilityQuerySchema = z.object({
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 }).strict();
 
-export const publicCodeSchema = z.string().regex(/^CEL-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/);
+export const publicCodeSchema = z.string().regex(/^CEL-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{10}$/);
 
 export const idempotencyKeySchema = z.string().trim().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/);
 

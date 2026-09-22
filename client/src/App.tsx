@@ -9,6 +9,7 @@ import Home from "@/pages/Home";
 import LegalPage from "@/pages/LegalPage";
 import NotFound from "@/pages/NotFound";
 import ServiceDetail from "@/pages/ServiceDetail";
+import { ServiceCatalogProvider } from "@/contexts/ServiceCatalogContext";
 
 function Router() {
   return (
@@ -29,9 +30,11 @@ function Router() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <RouteEffects />
-      <Router />
-      <AnalyticsConsent />
+      <ServiceCatalogProvider>
+        <RouteEffects />
+        <Router />
+        <AnalyticsConsent />
+      </ServiceCatalogProvider>
     </ErrorBoundary>
   );
 }
