@@ -5,7 +5,7 @@ import { dateRange, minutesToTime, parseBusinessDate, toBusinessInstant } from "
 
 describe("domain utilities", () => {
   it("gera código público amigável a partir de entropia criptográfica injetável", () => {
-    const code = createPublicCode(() => Buffer.from([0, 1, 2, 3, 4, 5]));
+    const code = createPublicCode((size) => Buffer.from(Array.from({ length: size }, (_, index) => index)));
     expect(code).toBe("CEL-23456789AB");
     expect(code).toMatch(/^CEL-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{10}$/);
   });
