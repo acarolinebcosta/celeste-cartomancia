@@ -1,15 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { serviceCatalogService, type ServiceCatalogService } from "@/services/serviceCatalogService";
 import type { Reading } from "@/types/domain";
-
-type ServiceCatalogState = {
-  services: Reading[];
-  loading: boolean;
-  error: string | null;
-  reload: () => void;
-};
-
-const ServiceCatalogContext = createContext<ServiceCatalogState | null>(null);
+import { ServiceCatalogContext } from "./serviceCatalogContext";
 
 export function ServiceCatalogProvider({
   children,
@@ -50,10 +42,4 @@ export function ServiceCatalogProvider({
   }), [error, loading, services]);
 
   return <ServiceCatalogContext.Provider value={value}>{children}</ServiceCatalogContext.Provider>;
-}
-
-export function useServiceCatalog() {
-  const context = useContext(ServiceCatalogContext);
-  if (!context) throw new Error("useServiceCatalog must be used inside ServiceCatalogProvider");
-  return context;
 }

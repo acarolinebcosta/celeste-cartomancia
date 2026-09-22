@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { Link, useLocation } from "wouter";
 import SiteHeader from "@/components/SiteHeader";
 import { getModalityLabel, modalityDetails } from "@/data/modalities";
-import { useServiceCatalog } from "@/contexts/ServiceCatalogContext";
+import { useServiceCatalog } from "@/contexts/useServiceCatalog";
 import { asyncQuestionSchema, customerSchema, type AsyncQuestionFormData, type CustomerFormData } from "@/features/booking/customerSchema";
 import { getBookingSteps, initializeBookingFromSearch, selectDate, selectModality, selectReading, stepLabels, type BookingStep } from "@/features/booking/bookingState";
 import { getStoredUtms, track } from "@/lib/analytics";

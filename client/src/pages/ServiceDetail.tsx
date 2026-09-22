@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowUpRight, Check, Clock3, LockKeyhole } from "lucide-react";
 import { Link, useRoute } from "wouter";
 import SiteHeader from "@/components/SiteHeader";
-import { useServiceCatalog } from "@/contexts/ServiceCatalogContext";
+import { useServiceCatalog } from "@/contexts/useServiceCatalog";
 import { formatModalities } from "@/data/modalities";
 import { track } from "@/lib/analytics";
 import { formatBRL, formatPriceFrom, formatReadingDuration } from "@/utils/formatters";

@@ -2,7 +2,7 @@ import { ArrowUpRight, ChevronDown, Headphones, MessageCircle, Sparkles, Video }
 import { Link } from "wouter";
 import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
-import { useServiceCatalog } from "@/contexts/ServiceCatalogContext";
+import { useServiceCatalog } from "@/contexts/useServiceCatalog";
 import { faqs } from "@/data/faqs";
 import { modalityDetails, modalities } from "@/data/modalities";
 import { testimonials } from "@/data/testimonials";
