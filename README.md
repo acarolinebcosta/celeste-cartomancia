@@ -295,7 +295,14 @@ Thresholds backend:
 - funções: 80%;
 - branches: 70%.
 
-Na validação do hardening, foram aprovados 14 arquivos e 56 testes frontend, 6 arquivos e 24 testes unitários backend e 7 arquivos e 46 testes de integração PostgreSQL. O coverage medido pelo V8 foi de 96,43% em lines, 85,09% em branches, 94,11% em functions e 96,43% em statements.
+Na validação do hardening, foram aprovados:
+
+- frontend: 14 arquivos / 56 testes;
+- backend unitário: 6 arquivos / 24 testes;
+- backend integração PostgreSQL: 1 arquivo / 22 testes;
+- backend total: 7 arquivos / 46 testes.
+
+O coverage medido pelo V8 foi de 96,43% em lines, 96,43% em statements, 94,11% em functions e 85,09% em branches.
 
 As migrations `20260920000100_booking_core` e `20260922000100_availability_exception_constraints` foram aplicadas em bancos PostgreSQL reais. O seed foi executado duas vezes e `pnpm db:seed:validate` confirmou cinco serviços, cinco regras semanais e as modalidades esperadas sem duplicação.
 
@@ -328,6 +335,16 @@ Ainda não implementado:
 - e-mail, WhatsApp, autenticação e administração.
 
 A próxima fase deve criar o pagamento referenciando um booking existente, validar webhooks diretamente com o provedor e confirmar booking apenas após pagamento verificado. O backend também deverá resolver conflitos entre hold expirado e pagamento tardio antes de habilitar cobrança real.
+
+## Considerações técnicas futuras
+
+### Simetria dos buffers da agenda
+
+Os bookings persistem `scheduledStart` e `scheduledEnd`, mas ainda não persistem o buffer que originou a reserva. A configuração atual usa buffers uniformes, portanto isso não afeta as regras presentes. Antes de introduzir janelas adjacentes configuráveis com durações de buffer diferentes, será necessário persistir o buffer da reserva (ou metadados equivalentes da política de agenda) e fazer a detecção de conflitos considerar tanto o buffer do booking existente quanto o do booking recebido.
+
+### Fronteira de retry de pagamento
+
+O booking intent é limpo após a criação bem-sucedida do booking. Isso é correto enquanto o pagamento permanece mockado. Quando pagamentos reais forem introduzidos, retries de checkout deverão reutilizar o booking e seu `publicCode`, em vez de criar outro booking. As tentativas de pagamento e a criação do booking deverão ter limites de idempotência separados. Ambos os pontos estão fora do escopo do Booking Core atual.
 
 ## Fora de escopo
 
