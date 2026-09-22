@@ -93,6 +93,7 @@ Não versionar `.env` nem segredos reais.
 | `pnpm db:migrate` | Cria/aplica migration em desenvolvimento |
 | `pnpm db:migrate:deploy` | Aplica migrations já versionadas |
 | `pnpm db:seed` | Executa catálogo e agenda iniciais |
+| `pnpm db:seed:validate` | Valida quantidade e modalidades do seed |
 
 Para testes de integração locais:
 
@@ -286,7 +287,7 @@ Analytics continua centralizado em `track()` e condicionado a consentimento. O b
 
 Os testes frontend cobrem estado, validação, analytics, mocks, cliente HTTP e adapters. Os testes backend cobrem catálogo, modalidade, fulfillment, preço, código público, timezone, slots, duração, buffer, bloqueios, consentimento, expiração, idempotência e projeção pública.
 
-A suíte de integração usa PostgreSQL real e cobre a matriz CT01–CT18, incluindo concorrência. Prisma não é mockado nos riscos críticos.
+A suíte de integração usa PostgreSQL real e cobre a matriz CT01–CT25, incluindo concorrência, overlap entre sessões de 30/60 minutos, limites de buffer, colisão de public code, timezone inválido e projeção pública sem PII. Prisma não é mockado nos riscos críticos.
 
 Thresholds backend:
 
@@ -294,12 +295,16 @@ Thresholds backend:
 - funções: 80%;
 - branches: 70%.
 
+Na validação do hardening, foram aprovados 14 arquivos e 56 testes frontend, 6 arquivos e 24 testes unitários backend e 7 arquivos e 46 testes de integração PostgreSQL. O coverage medido pelo V8 foi de 96,43% em lines, 85,09% em branches, 94,11% em functions e 96,43% em statements.
+
+As migrations `20260920000100_booking_core` e `20260922000100_availability_exception_constraints` foram aplicadas em bancos PostgreSQL reais. O seed foi executado duas vezes e `pnpm db:seed:validate` confirmou cinco serviços, cinco regras semanais e as modalidades esperadas sem duplicação.
+
 ## CI
 
 `.github/workflows/frontend-ci.yml` executa em pull requests e pushes na `main`:
 
 - frontend: install congelado, TypeScript, lint, testes e build;
-- backend: PostgreSQL 17, Prisma generate, migrations, TypeScript, lint, unitários, integração, coverage e build.
+- backend: PostgreSQL 17, Prisma generate, migrations, seed duas vezes, validação de seed, TypeScript, lint, unitários, integração, coverage e build.
 
 Não há secrets nem deploy automático.
 
