@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FulfillmentType {
+  ASYNC
+  SCHEDULED
+}
+
+enum Modality {
+  MESSAGE
+  VOICE
+  VIDEO
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  AWAITING_PAYMENT
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+  REFUNDED
+}
+
+model Service {
+  id                String              @id @default(uuid()) @db.Uuid
+  slug              String              @unique
+  name              String
+  eyebrow           String
+  description       String
+  audience          String
+  explores          String[]
+  fulfillmentType   FulfillmentType
+  durationMinutes   Int?
+  priceCents        Int
+  featured          Boolean             @default(false)
+  estimatedDelivery String?
+  active            Boolean             @default(true)
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
+  modalities        ServiceModality[]
+  bookings          Booking[]
+}
+
+model ServiceModality {
+  serviceId String   @db.Uuid
+  modality  Modality
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, modality])
+}
+
+model AvailabilityRule {
+  id            String   @id @default(uuid()) @db.Uuid
+  dayOfWeek     Int
+  startMinute   Int
+  endMinute     Int
+  bufferMinutes Int      @default(15)
+  timezone      String
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([dayOfWeek, startMinute, endMinute, timezone])
+}
+
+model AvailabilityException {
+  id          String   @id @default(uuid()) @db.Uuid
+  date        DateTime @db.Date
+  available   Boolean
+  startMinute Int?
+  endMinute   Int?
+  timezone    String
+  note        String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([date, timezone])
+}
+
+model AvailabilityBlock {
+  id        String   @id @default(uuid()) @db.Uuid
+  startsAt  DateTime @db.Timestamptz(3)
+  endsAt    DateTime @db.Timestamptz(3)
+  note      String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([startsAt, endsAt])
+}
+
+model Booking {
+  id               String          @id @default(uuid()) @db.Uuid
+  publicCode       String          @unique
+  serviceId        String          @db.Uuid
+  service          Service         @relation(fields: [serviceId], references: [id])
+  fulfillmentType  FulfillmentType
+  modality         Modality?
+  customerName     String
+  customerEmail    String
+  customerWhatsapp String
+  question         String?
+  context          String?
+  scheduledStart   DateTime?       @db.Timestamptz(3)
+  scheduledEnd     DateTime?       @db.Timestamptz(3)
+  timezone         String
+  priceCents       Int
+  currency         String          @default("BRL")
+  status           BookingStatus   @default(PENDING_PAYMENT)
+  paymentStatus    PaymentStatus   @default(AWAITING_PAYMENT)
+  expiresAt        DateTime?       @db.Timestamptz(3)
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  utmContent       String?
+  utmTerm          String?
+  termsVersion     String
+  privacyVersion   String
+  termsAcceptedAt  DateTime        @db.Timestamptz(3)
+  idempotencyKey   String?         @unique
+  idempotencyHash  String?
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime        @updatedAt @db.Timestamptz(3)
+
+  @@index([scheduledStart, scheduledEnd])
+  @@index([status, expiresAt])
+  @@index([serviceId, createdAt])
+}

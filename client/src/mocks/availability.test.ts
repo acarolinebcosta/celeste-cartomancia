@@ -20,6 +20,6 @@ describe("disponibilidade mock", () => {
   });
 
   it("serviço retorna zero datas para async", async () => {
-    await expect(new MockAvailabilityService().getAvailableDates(getReading("pergunta-direta"))).resolves.toEqual([]);
+    await expect(new MockAvailabilityService().getAvailableDates(getReading("pergunta-direta"), "message")).resolves.toEqual([]);
   });
 });
