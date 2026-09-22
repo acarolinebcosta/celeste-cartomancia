@@ -93,6 +93,7 @@ Não versionar `.env` nem segredos reais.
 | `pnpm db:migrate` | Cria/aplica migration em desenvolvimento |
 | `pnpm db:migrate:deploy` | Aplica migrations já versionadas |
 | `pnpm db:seed` | Executa catálogo e agenda iniciais |
+| `pnpm db:seed:validate` | Valida quantidade e modalidades do seed |
 
 Para testes de integração locais:
 
@@ -286,7 +287,7 @@ Analytics continua centralizado em `track()` e condicionado a consentimento. O b
 
 Os testes frontend cobrem estado, validação, analytics, mocks, cliente HTTP e adapters. Os testes backend cobrem catálogo, modalidade, fulfillment, preço, código público, timezone, slots, duração, buffer, bloqueios, consentimento, expiração, idempotência e projeção pública.
 
-A suíte de integração usa PostgreSQL real e cobre a matriz CT01–CT18, incluindo concorrência. Prisma não é mockado nos riscos críticos.
+A suíte de integração usa PostgreSQL real e cobre a matriz CT01–CT25, incluindo concorrência, overlap entre sessões de 30/60 minutos, limites de buffer, colisão de public code, timezone inválido e projeção pública sem PII. Prisma não é mockado nos riscos críticos.
 
 Thresholds backend:
 
@@ -294,12 +295,23 @@ Thresholds backend:
 - funções: 80%;
 - branches: 70%.
 
+Na validação do hardening, foram aprovados:
+
+- frontend: 14 arquivos / 56 testes;
+- backend unitário: 6 arquivos / 24 testes;
+- backend integração PostgreSQL: 1 arquivo / 22 testes;
+- backend total: 7 arquivos / 46 testes.
+
+O coverage medido pelo V8 foi de 96,43% em lines, 96,43% em statements, 94,11% em functions e 85,09% em branches.
+
+As migrations `20260920000100_booking_core` e `20260922000100_availability_exception_constraints` foram aplicadas em bancos PostgreSQL reais. O seed foi executado duas vezes e `pnpm db:seed:validate` confirmou cinco serviços, cinco regras semanais e as modalidades esperadas sem duplicação.
+
 ## CI
 
 `.github/workflows/frontend-ci.yml` executa em pull requests e pushes na `main`:
 
 - frontend: install congelado, TypeScript, lint, testes e build;
-- backend: PostgreSQL 17, Prisma generate, migrations, TypeScript, lint, unitários, integração, coverage e build.
+- backend: PostgreSQL 17, Prisma generate, migrations, seed duas vezes, validação de seed, TypeScript, lint, unitários, integração, coverage e build.
 
 Não há secrets nem deploy automático.
 
@@ -323,6 +335,16 @@ Ainda não implementado:
 - e-mail, WhatsApp, autenticação e administração.
 
 A próxima fase deve criar o pagamento referenciando um booking existente, validar webhooks diretamente com o provedor e confirmar booking apenas após pagamento verificado. O backend também deverá resolver conflitos entre hold expirado e pagamento tardio antes de habilitar cobrança real.
+
+## Considerações técnicas futuras
+
+### Simetria dos buffers da agenda
+
+Os bookings persistem `scheduledStart` e `scheduledEnd`, mas ainda não persistem o buffer que originou a reserva. A configuração atual usa buffers uniformes, portanto isso não afeta as regras presentes. Antes de introduzir janelas adjacentes configuráveis com durações de buffer diferentes, será necessário persistir o buffer da reserva (ou metadados equivalentes da política de agenda) e fazer a detecção de conflitos considerar tanto o buffer do booking existente quanto o do booking recebido.
+
+### Fronteira de retry de pagamento
+
+O booking intent é limpo após a criação bem-sucedida do booking. Isso é correto enquanto o pagamento permanece mockado. Quando pagamentos reais forem introduzidos, retries de checkout deverão reutilizar o booking e seu `publicCode`, em vez de criar outro booking. As tentativas de pagamento e a criação do booking deverão ter limites de idempotência separados. Ambos os pontos estão fora do escopo do Booking Core atual.
 
 ## Fora de escopo
 

@@ -1,5 +1,6 @@
 import { BookingStatus, PaymentStatus, Prisma, type PrismaClient } from "@prisma/client";
 import { errors } from "../errors/appError.js";
+import { PublicCodeCollisionError } from "../errors/repositoryErrors.js";
 import type { BookingRecord } from "../domain/types.js";
 import type { AtomicBookingInput, BookingRepository } from "./contracts.js";
 
@@ -31,7 +32,8 @@ export class PrismaBookingRepository implements BookingRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async createAtomic(input: AtomicBookingInput, now: Date) {
-    return this.prisma.$transaction(async (transaction) => {
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
       await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`idempotency:${input.idempotencyKey}`}, 0))`;
 
       const existing = await transaction.booking.findUnique({
@@ -98,7 +100,11 @@ export class PrismaBookingRepository implements BookingRepository {
         include: bookingInclude,
       });
       return { booking: mapBooking(booking), replayed: false };
-    }, { maxWait: 5_000, timeout: 15_000 });
+      }, { maxWait: 5_000, timeout: 15_000 });
+    } catch (error) {
+      if (isPublicCodeUniqueViolation(error)) throw new PublicCodeCollisionError();
+      throw error;
+    }
   }
 
   async findByPublicCode(publicCode: string, now: Date) {
@@ -114,4 +120,11 @@ export class PrismaBookingRepository implements BookingRepository {
     const booking = await this.prisma.booking.findUnique({ where: { idempotencyKey }, include: bookingInclude });
     return booking ? mapBooking(booking) : null;
   }
+}
+
+function isPublicCodeUniqueViolation(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") return false;
+  const target = error.meta?.target;
+  if (Array.isArray(target)) return target.some((field) => field === "publicCode");
+  return typeof target === "string" && (target.includes("publicCode") || target.includes("Booking_publicCode_key"));
 }

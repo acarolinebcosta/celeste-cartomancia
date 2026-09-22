@@ -14,6 +14,10 @@ export type AvailabilityRequest = {
 
 export type AvailableSlot = { startTime: string; available: true };
 export type AvailableDate = { date: string; slots: AvailableSlot[] };
+type GeneratedSlot = AvailableSlot & { startsAt: Date; endsAt: Date; bufferMinutes: number };
+type GeneratedDate = { date: string; slots: GeneratedSlot[] };
+
+export const DEFAULT_EXCEPTION_BUFFER_MINUTES = 15;
 
 type Clock = () => Date;
 
@@ -30,6 +34,25 @@ export class AvailabilityService {
   ) {}
 
   async getAvailability(input: AvailabilityRequest) {
+    const result = await this.resolveAvailability(input);
+    return {
+      ...result,
+      dates: result.dates.map(({ date, slots }) => ({
+        date,
+        slots: slots.map(({ startTime, available }) => ({ startTime, available })),
+      })),
+    };
+  }
+
+  async assertSlotAvailable(input: Omit<AvailabilityRequest, "from" | "to"> & { date: string; time: string }) {
+    const result = await this.resolveAvailability({ ...input, from: input.date, to: input.date });
+    const slot = result.dates.find((item) => item.date === input.date)?.slots
+      .find((item) => item.startTime === input.time);
+    if (!slot) throw errors.slotUnavailable();
+    return { startsAt: slot.startsAt, endsAt: slot.endsAt, bufferMinutes: slot.bufferMinutes };
+  }
+
+  private async resolveAvailability(input: AvailabilityRequest) {
     const service = await this.validateService(input.serviceSlug, input.modality);
     const days = dateRange(input.from, input.to, this.timezone);
     const now = this.clock();
@@ -44,7 +67,7 @@ export class AvailabilityService {
       this.availability.listBlockingBookings(rangeStart, rangeEnd, now),
     ]);
 
-    const dates = days.flatMap((day): AvailableDate[] => {
+    const dates = days.flatMap((day): GeneratedDate[] => {
       const isoDate = day.toISODate()!;
       const dateExceptions = exceptions.filter((item) => item.date === isoDate);
       const isFullyBlocked = dateExceptions.some((item) => !item.available && item.startMinute === null && item.endMinute === null);
@@ -52,7 +75,11 @@ export class AvailabilityService {
 
       const overrideWindows = dateExceptions.filter((item) => item.available && item.startMinute !== null && item.endMinute !== null);
       const windows = overrideWindows.length > 0
-        ? overrideWindows.map((item) => ({ startMinute: item.startMinute!, endMinute: item.endMinute!, bufferMinutes: 15 }))
+        ? overrideWindows.map((item) => ({
+          startMinute: item.startMinute!,
+          endMinute: item.endMinute!,
+          bufferMinutes: DEFAULT_EXCEPTION_BUFFER_MINUTES,
+        }))
         : rules.filter((rule) => rule.dayOfWeek === day.weekday);
 
       const blockedWindows = dateExceptions
@@ -71,23 +98,6 @@ export class AvailabilityService {
     });
 
     return { timezone: this.timezone, fulfillmentType: "SCHEDULED" as const, dates };
-  }
-
-  async assertSlotAvailable(input: Omit<AvailabilityRequest, "from" | "to"> & { date: string; time: string }) {
-    const result = await this.getAvailability({ ...input, from: input.date, to: input.date });
-    const date = result.dates.find((item) => item.date === input.date);
-    if (!date?.slots.some((slot) => slot.startTime === input.time)) throw errors.slotUnavailable();
-
-    const service = await this.catalog.requireService(input.serviceSlug);
-    const rules = await this.availability.listRules(this.timezone);
-    const day = DateTime.fromISO(input.date, { zone: this.timezone });
-    const bufferMinutes = rules.find((rule) => rule.dayOfWeek === day.weekday)?.bufferMinutes ?? 15;
-    const start = DateTime.fromISO(`${input.date}T${input.time}`, { zone: this.timezone });
-    return {
-      startsAt: start.toUTC().toJSDate(),
-      endsAt: start.plus({ minutes: service.durationMinutes! }).toUTC().toJSDate(),
-      bufferMinutes,
-    };
   }
 
   private async validateService(serviceSlug: string, modality: DomainModality): Promise<ServiceRecord> {
@@ -113,8 +123,8 @@ export class AvailabilityService {
     now: Date,
     blocks: TimeRange[],
     bookings: TimeRange[],
-  ): AvailableSlot[] {
-    const slots: AvailableSlot[] = [];
+  ): GeneratedSlot[] {
+    const slots: GeneratedSlot[] = [];
     const step = durationMinutes + window.bufferMinutes;
     for (let minute = window.startMinute; minute + durationMinutes <= window.endMinute; minute += step) {
       const startsAt = day.plus({ minutes: minute }).toUTC().toJSDate();
@@ -128,7 +138,13 @@ export class AvailabilityService {
       };
       if (blocks.some((block) => overlaps(session, block))) continue;
       if (bookings.some((booking) => overlaps(sessionWithBuffer, booking))) continue;
-      slots.push({ startTime: minutesToTime(minute), available: true });
+      slots.push({
+        startTime: minutesToTime(minute),
+        available: true,
+        startsAt,
+        endsAt,
+        bufferMinutes: window.bufferMinutes,
+      });
     }
     return slots;
   }

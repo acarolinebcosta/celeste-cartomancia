@@ -1,6 +1,6 @@
 import type { Reading } from "@/types/domain";
 
-export const readings: Reading[] = [
+export const mockReadings: Reading[] = [
   {
     slug: "pergunta-direta",
     name: "Pergunta Direta",
@@ -10,7 +10,8 @@ export const readings: Reading[] = [
     explores: ["o contexto da situação", "movimentos e possibilidades", "o que merece atenção neste momento"],
     fulfillmentType: "async",
     durationMinutes: null,
-    price: 49,
+    priceCents: 4900,
+    active: true,
     availableModalities: ["message"],
     estimatedDelivery: "Prazo de entrega será informado antes da confirmação.",
   },
@@ -23,7 +24,8 @@ export const readings: Reading[] = [
     explores: ["os caminhos disponíveis", "tensões e recursos de cada possibilidade", "o que pode orientar sua escolha"],
     fulfillmentType: "scheduled",
     durationMinutes: 30,
-    price: 129,
+    priceCents: 12900,
+    active: true,
     availableModalities: ["voice", "video"],
   },
   {
@@ -35,7 +37,8 @@ export const readings: Reading[] = [
     explores: ["a dinâmica atual", "padrões de aproximação e afastamento", "possibilidades de conversa e movimento"],
     fulfillmentType: "scheduled",
     durationMinutes: 30,
-    price: 129,
+    priceCents: 12900,
+    active: true,
     featured: true,
     availableModalities: ["voice", "video"],
   },
@@ -48,7 +51,8 @@ export const readings: Reading[] = [
     explores: ["o momento presente", "desafios e aprendizados do ciclo", "movimentos e possibilidades próximas"],
     fulfillmentType: "scheduled",
     durationMinutes: 30,
-    price: 129,
+    priceCents: 12900,
+    active: true,
     availableModalities: ["voice", "video"],
   },
   {
@@ -60,11 +64,14 @@ export const readings: Reading[] = [
     explores: ["várias perguntas relacionadas", "camadas da situação", "recursos para atravessar o momento"],
     fulfillmentType: "scheduled",
     durationMinutes: 60,
-    price: 179,
+    priceCents: 17900,
+    active: true,
     availableModalities: ["voice", "video"],
   },
 ];
 
-export const getReading = (slug?: string | null) => readings.find((reading) => reading.slug === slug) ?? readings[0];
+export const readings = mockReadings;
 
-export const findReading = (slug?: string | null) => readings.find((reading) => reading.slug === slug);
+export const getReading = (slug?: string | null) => mockReadings.find((reading) => reading.slug === slug) ?? mockReadings[0];
+
+export const findReading = (slug?: string | null) => mockReadings.find((reading) => reading.slug === slug);

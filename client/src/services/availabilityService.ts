@@ -1,6 +1,7 @@
 import { createMockAvailableDates, createMockAvailableSlots } from "@/mocks/availability";
 import { apiClient } from "@/lib/apiClient";
 import type { Modality, Reading } from "@/types/domain";
+import { usingMockApi } from "@/config/apiMode";
 
 export type AvailableDate = { isoDate: string; date: Date };
 export type AvailabilitySlot = { startTime: string };
@@ -64,7 +65,7 @@ export class ApiAvailabilityService implements AvailabilityService {
   }
 }
 
-export const usingMockApi = import.meta.env.VITE_USE_MOCK_API !== "false";
+export { usingMockApi };
 export const availabilityService: AvailabilityService = usingMockApi
   ? new MockAvailabilityService()
   : new ApiAvailabilityService();

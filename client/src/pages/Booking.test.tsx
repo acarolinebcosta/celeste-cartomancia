@@ -2,21 +2,23 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import Booking from "@/pages/Booking";
+import { ServiceCatalogProvider } from "@/contexts/ServiceCatalogContext";
+import { MockServiceCatalogService } from "@/services/serviceCatalogService";
 
 function renderAt(path: string) {
   window.history.replaceState({}, "", path);
-  return render(<Booking />);
+  return render(<ServiceCatalogProvider service={new MockServiceCatalogService()}><Booking /></ServiceCatalogProvider>);
 }
 
 describe("Booking", () => {
-  it("pré-seleciona serviço informado por querystring", () => {
+  it("pré-seleciona serviço informado por querystring", async () => {
     renderAt("/agendar?servico=amor-relacoes");
-    expect(screen.getByRole("button", { name: /Amor & Relações/ })).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: /Amor & Relações/ })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("pré-seleciona modalidade e filtra leituras compatíveis", () => {
+  it("pré-seleciona modalidade e filtra leituras compatíveis", async () => {
     renderAt("/agendar?modalidade=voice");
-    expect(screen.getByText(/Mostrando leituras compatíveis com Chamada de voz/)).toBeInTheDocument();
+    expect(await screen.findByText(/Mostrando leituras compatíveis com Chamada de voz/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Pergunta Direta/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Entre Caminhos/ })).toHaveAttribute("aria-pressed", "true");
   });
@@ -24,7 +26,7 @@ describe("Booking", () => {
   it("fluxo async não mostra calendário e apresenta questão", async () => {
     const user = userEvent.setup();
     renderAt("/agendar?servico=pergunta-direta");
-    await user.click(screen.getByRole("button", { name: /Continuar/ }));
+    await user.click(await screen.findByRole("button", { name: /Continuar/ }));
     expect(screen.getByRole("heading", { name: "O que pede clareza?" })).toBeInTheDocument();
     expect(screen.queryByText("Encontre um momento.")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /09:/ })).not.toBeInTheDocument();
@@ -33,7 +35,7 @@ describe("Booking", () => {
   it("fluxo scheduled mostra etapa de calendário", async () => {
     const user = userEvent.setup();
     renderAt("/agendar?servico=amor-relacoes&modalidade=voice");
-    await user.click(screen.getByRole("button", { name: /Continuar/ }));
+    await user.click(await screen.findByRole("button", { name: /Continuar/ }));
     expect(screen.getByRole("heading", { name: "Como prefere conversar?" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Chamada de voz/ })).toHaveAttribute("aria-pressed", "true");
     await user.click(screen.getByRole("button", { name: /Continuar/ }));
@@ -44,7 +46,7 @@ describe("Booking", () => {
   it("não avança com e-mail inválido ou termos não aceitos", async () => {
     const user = userEvent.setup();
     renderAt("/agendar?servico=pergunta-direta");
-    await user.click(screen.getByRole("button", { name: /Continuar/ }));
+    await user.click(await screen.findByRole("button", { name: /Continuar/ }));
     await user.type(screen.getByLabelText("Pergunta"), "Como posso olhar para esta mudança?");
     await user.click(screen.getByRole("button", { name: /Continuar/ }));
 

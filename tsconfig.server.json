@@ -12,6 +12,6 @@
     "types": ["node", "vitest/globals"],
     "sourceMap": true
   },
-  "include": ["server/**/*.ts", "prisma/seed.ts", "vitest.server.config.ts"],
+  "include": ["server/**/*.ts", "prisma/seed.ts", "prisma/validateSeed.ts", "vitest.server.config.ts"],
   "exclude": ["server/**/*.test.ts", "server/tests/**", "node_modules", "dist"]
 }

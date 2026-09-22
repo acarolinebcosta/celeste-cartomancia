@@ -1,5 +1,7 @@
 import type { Booking, CreateBookingInput } from "@/types/domain";
 import { ApiError, apiClient } from "@/lib/apiClient";
+import { usingMockApi } from "@/config/apiMode";
+import { BookingIntentStore, bookingIntentStore } from "@/services/bookingIntent";
 
 const STORAGE_PREFIX = "celeste_mock_booking:";
 
@@ -9,7 +11,7 @@ export interface BookingService {
 }
 
 export function createMockPublicCode(random = Math.random) {
-  const token = random().toString(36).slice(2, 8).toUpperCase().padEnd(6, "0");
+  const token = `${random().toString(36).slice(2)}0000000000`.slice(0, 10).toUpperCase();
   return `CEL-${token}`;
 }
 
@@ -32,7 +34,7 @@ export class MockBookingService implements BookingService {
       modality: input.data.modality,
       scheduledStart: input.data.date && input.data.time ? `${input.data.date}T${input.data.time}:00-03:00` : null,
       timezone: "America/Sao_Paulo",
-      priceCents: input.reading.price * 100,
+      priceCents: input.reading.priceCents,
       currency: "BRL",
       expiresAt: input.reading.fulfillmentType === "scheduled" ? new Date(Date.now() + 15 * 60_000).toISOString() : null,
       createdAt: new Date().toISOString(),
@@ -82,6 +84,11 @@ function mapApiBooking(booking: ApiBooking): Booking {
 }
 
 export class ApiBookingService implements BookingService {
+  constructor(
+    private readonly client: Pick<typeof apiClient, "request"> = apiClient,
+    private readonly intents: BookingIntentStore = bookingIntentStore,
+  ) {}
+
   async createBooking(input: CreateBookingInput): Promise<Booking> {
     const { data } = input;
     const payload = {
@@ -93,17 +100,19 @@ export class ApiBookingService implements BookingService {
       termsAccepted: data.termsAccepted,
       utms: input.utms,
     };
-    const booking = await apiClient.request<ApiBooking>("/bookings", {
+    const intent = this.intents.getOrCreate(payload);
+    const booking = await this.client.request<ApiBooking>("/bookings", {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": intent.key },
       body: payload,
     });
+    this.intents.clear(intent.key);
     return mapApiBooking(booking);
   }
 
   async getBooking(publicCode: string): Promise<Booking | null> {
     try {
-      return mapApiBooking(await apiClient.request<ApiBooking>(`/bookings/${encodeURIComponent(publicCode)}`));
+      return mapApiBooking(await this.client.request<ApiBooking>(`/bookings/${encodeURIComponent(publicCode)}`));
     } catch (error) {
       if (error instanceof ApiError && error.code === "BOOKING_NOT_FOUND") return null;
       throw error;
@@ -111,7 +120,7 @@ export class ApiBookingService implements BookingService {
   }
 }
 
-export const usingMockBookingApi = import.meta.env.VITE_USE_MOCK_API !== "false";
+export const usingMockBookingApi = usingMockApi;
 export const bookingService: BookingService = usingMockBookingApi
   ? new MockBookingService()
   : new ApiBookingService();

@@ -18,7 +18,7 @@ export const publicBookingSchema = {
   type: "object",
   required: ["publicCode", "service", "status", "paymentStatus", "fulfillmentType", "modality", "scheduledStart", "timezone", "priceCents", "currency", "expiresAt", "createdAt"],
   properties: {
-    publicCode: { type: "string", pattern: "^CEL-" },
+    publicCode: { type: "string", pattern: "^CEL-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{10}$" },
     service: {
       type: "object",
       required: ["slug", "name", "durationMinutes"],

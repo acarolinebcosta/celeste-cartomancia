@@ -6,7 +6,7 @@ import { MockPaymentService } from "@/services/paymentService";
 
 describe("serviços mock", () => {
   it("gera código público no formato demonstrativo", () => {
-    expect(createMockPublicCode(() => 0.123456789)).toMatch(/^CEL-[A-Z0-9]{6}$/);
+    expect(createMockPublicCode(() => 0.123456789)).toMatch(/^CEL-[A-Z0-9]{10}$/);
   });
 
   it("persiste e recupera preview somente na sessionStorage", async () => {
@@ -17,7 +17,7 @@ describe("serviços mock", () => {
   });
 
   it("retorna null para código inexistente", async () => {
-    await expect(new MockBookingService().getBooking("CEL-XXXXXX")).resolves.toBeNull();
+    await expect(new MockBookingService().getBooking("CEL-XXXXXXXXXX")).resolves.toBeNull();
   });
 
   it("checkout mock permanece aguardando pagamento", async () => {

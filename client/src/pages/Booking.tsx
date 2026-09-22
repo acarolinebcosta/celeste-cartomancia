@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { Link, useLocation } from "wouter";
 import SiteHeader from "@/components/SiteHeader";
 import { getModalityLabel, modalityDetails } from "@/data/modalities";
-import { getReading, readings } from "@/data/readings";
+import { useServiceCatalog } from "@/contexts/useServiceCatalog";
 import { asyncQuestionSchema, customerSchema, type AsyncQuestionFormData, type CustomerFormData } from "@/features/booking/customerSchema";
 import { getBookingSteps, initializeBookingFromSearch, selectDate, selectModality, selectReading, stepLabels, type BookingStep } from "@/features/booking/bookingState";
 import { getStoredUtms, track } from "@/lib/analytics";
@@ -17,8 +17,16 @@ import type { BookingDraft, Modality, PaymentStatus, Reading } from "@/types/dom
 import { formatBRL, formatDate, formatDateLong, formatDateShort, formatReadingDuration } from "@/utils/formatters";
 
 export default function Booking() {
+  const catalog = useServiceCatalog();
+  if (catalog.loading) return <CatalogBookingState message="Carregando leituras…" />;
+  if (catalog.error) return <CatalogBookingState message={catalog.error} onRetry={catalog.reload} />;
+  if (catalog.services.length === 0) return <CatalogBookingState message="Nenhuma leitura está disponível no momento." />;
+  return <BookingFlow readings={catalog.services} />;
+}
+
+function BookingFlow({ readings }: { readings: Reading[] }) {
   const [, setLocation] = useLocation();
-  const initial = useMemo(() => initializeBookingFromSearch(window.location.search), []);
+  const initial = useMemo(() => initializeBookingFromSearch(window.location.search, readings), [readings]);
   const [booking, setBooking] = useState(initial.booking);
   const [modalityFilter, setModalityFilter] = useState<Modality | null>(initial.modalityFilter);
   const [stepIndex, setStepIndex] = useState(0);
@@ -26,7 +34,7 @@ export default function Booking() {
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([]);
   const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([]);
   const [availabilityRevision, setAvailabilityRevision] = useState(0);
-  const reading = getReading(booking.readingSlug);
+  const reading = readings.find((item) => item.slug === booking.readingSlug) ?? readings[0];
   const steps = useMemo(() => getBookingSteps(reading), [reading]);
   const activeStep = steps[stepIndex];
   const visibleReadings = modalityFilter
@@ -167,7 +175,7 @@ function Stepper({ steps, activeIndex }: { steps: BookingStep[]; activeIndex: nu
 }
 
 function ReadingStep({ readings: choices, selected, modalityFilter, onClearFilter, onSelect }: { readings: Reading[]; selected: string; modalityFilter: Modality | null; onClearFilter: () => void; onSelect: (reading: Reading) => void }) {
-  return <div><StepIntro eyebrow="01 · LEITURA" title="O que você quer olhar?" copy="Comece escolhendo o formato que melhor acolhe a sua pergunta." />{modalityFilter && <p className="filter-note">Mostrando leituras compatíveis com {getModalityLabel(modalityFilter)}. <button type="button" onClick={onClearFilter}>Ver todas</button></p>}<div className="booking-options">{choices.map((reading) => <button type="button" className={`booking-option ${selected === reading.slug ? "selected" : ""}`} aria-pressed={selected === reading.slug} key={reading.slug} onClick={() => onSelect(reading)}><span><strong>{reading.name}</strong><small>{reading.eyebrow}</small></span><span className="option-price">{formatBRL(reading.price)}</span></button>)}</div></div>;
+  return <div><StepIntro eyebrow="01 · LEITURA" title="O que você quer olhar?" copy="Comece escolhendo o formato que melhor acolhe a sua pergunta." />{modalityFilter && <p className="filter-note">Mostrando leituras compatíveis com {getModalityLabel(modalityFilter)}. <button type="button" onClick={onClearFilter}>Ver todas</button></p>}<div className="booking-options">{choices.map((reading) => <button type="button" className={`booking-option ${selected === reading.slug ? "selected" : ""}`} aria-pressed={selected === reading.slug} key={reading.slug} onClick={() => onSelect(reading)}><span><strong>{reading.name}</strong><small>{reading.eyebrow}</small></span><span className="option-price">{formatBRL(reading.priceCents)}</span></button>)}</div></div>;
 }
 
 function ModalityStep({ reading, selected, onSelect }: { reading: Reading; selected: Modality | null; onSelect: (value: Modality) => void }) {
@@ -190,10 +198,10 @@ function DetailsStep({ booking, onBack, onSubmit }: { booking: BookingDraft; onB
 }
 
 function SummaryStep({ booking, reading }: { booking: BookingDraft; reading: Reading }) {
-  return <div><StepIntro eyebrow="RESUMO" title="Revise com calma." copy="Confira os dados antes de acessar a demonstração de pagamento." /><div className="payment-review"><div><span>Leitura</span><strong>{reading.name}</strong></div><div><span>Entrega</span><strong>{reading.fulfillmentType === "async" ? "Por mensagem" : `${booking.modality ? getModalityLabel(booking.modality) : "—"} · ${booking.date ? formatDate(booking.date) : "—"} · ${booking.time || "—"}`}</strong></div>{reading.fulfillmentType === "async" && <div><span>Questão</span><strong>{booking.question}</strong></div>}<div><span>Contato</span><strong>{booking.name} · {booking.email}</strong></div><div><span>Valor</span><strong className="payment-total">{formatBRL(reading.price)}</strong></div></div></div>;
+  return <div><StepIntro eyebrow="RESUMO" title="Revise com calma." copy="Confira os dados antes de acessar a demonstração de pagamento." /><div className="payment-review"><div><span>Leitura</span><strong>{reading.name}</strong></div><div><span>Entrega</span><strong>{reading.fulfillmentType === "async" ? "Por mensagem" : `${booking.modality ? getModalityLabel(booking.modality) : "—"} · ${booking.date ? formatDate(booking.date) : "—"} · ${booking.time || "—"}`}</strong></div>{reading.fulfillmentType === "async" && <div><span>Questão</span><strong>{booking.question}</strong></div>}<div><span>Contato</span><strong>{booking.name} · {booking.email}</strong></div><div><span>Valor</span><strong className="payment-total">{formatBRL(reading.priceCents)}</strong></div></div></div>;
 }
 
-const paymentStatusLabels: Record<PaymentStatus, string> = { awaiting_payment: "Aguardando pagamento", rejected: "Pagamento recusado", expired: "Pagamento expirado", cancelled: "Pagamento cancelado", approved: "Pagamento aprovado" };
+const paymentStatusLabels: Record<PaymentStatus, string> = { awaiting_payment: "Aguardando pagamento", rejected: "Pagamento recusado", expired: "Pagamento expirado", cancelled: "Pagamento cancelado", approved: "Pagamento aprovado", refunded: "Pagamento reembolsado" };
 
 function PaymentStep({ reading, onBack, onConfirm }: { reading: Reading; onBack: () => void; onConfirm: (method: PaymentMethod) => Promise<void> }) {
   const [method, setMethod] = useState<PaymentMethod>("pix");
@@ -213,7 +221,11 @@ function PaymentStep({ reading, onBack, onConfirm }: { reading: Reading; onBack:
 }
 
 function BookingSummary({ booking, reading }: { booking: BookingDraft; reading: Reading }) {
-  return <aside className="booking-summary"><span className="section-kicker">RESUMO</span><div className="summary-symbol">✦</div><h2>{reading.name}</h2><p>{reading.description}</p><div className="summary-line"><span>Valor inicial</span><strong>{formatBRL(reading.price)}</strong></div>{booking.modality && <div className="summary-line"><span>Modalidade</span><strong>{getModalityLabel(booking.modality)}</strong></div>}{reading.fulfillmentType === "scheduled" && booking.date && <div className="summary-line"><span>Quando</span><strong>{formatDate(booking.date)} {booking.time && `· ${booking.time}`}</strong></div>}{reading.fulfillmentType === "async" && <div className="summary-line"><span>Entrega</span><strong>{reading.estimatedDelivery}</strong></div>}<div className="summary-note"><LockKeyhole size={15} /> Seus dados são tratados com privacidade.</div></aside>;
+  return <aside className="booking-summary"><span className="section-kicker">RESUMO</span><div className="summary-symbol">✦</div><h2>{reading.name}</h2><p>{reading.description}</p><div className="summary-line"><span>Valor inicial</span><strong>{formatBRL(reading.priceCents)}</strong></div>{booking.modality && <div className="summary-line"><span>Modalidade</span><strong>{getModalityLabel(booking.modality)}</strong></div>}{reading.fulfillmentType === "scheduled" && booking.date && <div className="summary-line"><span>Quando</span><strong>{formatDate(booking.date)} {booking.time && `· ${booking.time}`}</strong></div>}{reading.fulfillmentType === "async" && <div className="summary-line"><span>Entrega</span><strong>{reading.estimatedDelivery}</strong></div>}<div className="summary-note"><LockKeyhole size={15} /> Seus dados são tratados com privacidade.</div></aside>;
+}
+
+function CatalogBookingState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return <div className="site-shell booking-shell"><SiteHeader /><main className="confirmation-page section-pad"><span className="section-kicker">ATENDIMENTO</span><h1>Organizando<br /><em>as leituras.</em></h1><p className="confirmation-lede" role={onRetry ? "alert" : "status"}>{message}</p>{onRetry && <button className="button button-primary" type="button" onClick={onRetry}>Tentar novamente</button>}</main></div>;
 }
 
 function StepIntro({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {

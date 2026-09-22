@@ -11,7 +11,8 @@ export type Reading = {
   explores: string[];
   fulfillmentType: FulfillmentType;
   durationMinutes: number | null;
-  price: number;
+  priceCents: number;
+  active: boolean;
   featured?: boolean;
   availableModalities: Modality[];
   estimatedDelivery?: string;
@@ -37,7 +38,8 @@ export type PaymentStatus =
   | "rejected"
   | "expired"
   | "cancelled"
-  | "approved";
+  | "approved"
+  | "refunded";
 
 export type Booking = {
   publicCode: string;

@@ -79,6 +79,7 @@ h1 em, h2 em, h3 em { font-style: italic; color: var(--gold); }
 .chooser-card:hover .circle-arrow, .modality-row:hover .row-arrow { background: var(--gold); color: var(--bg); transform: translate(2px,-2px); }
 .readings-section { padding-bottom: 155px; }
 .readings-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); margin-top: 64px; }
+.catalog-message { display: flex; flex-direction: column; justify-content: center; gap: 18px; grid-column: 1 / -1; min-height: 180px; }
 .reading-card { background: var(--bg); min-height: 310px; padding: 27px 26px; display: flex; flex-direction: column; transition: background .25s; }
 .reading-card:hover { background: var(--bg-3); }
 .reading-card-featured { background: #171412; }

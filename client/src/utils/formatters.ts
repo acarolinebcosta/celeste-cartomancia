@@ -1,13 +1,13 @@
 import type { Reading } from "@/types/domain";
 
-export const formatBRL = (value: number) =>
+export const formatBRL = (priceCents: number) =>
   new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(priceCents / 100);
 
-export const formatPriceFrom = (price: number) => `A partir de ${formatBRL(price)}`;
+export const formatPriceFrom = (priceCents: number) => `A partir de ${formatBRL(priceCents)}`;
 
 export const formatReadingDuration = (reading: Reading) =>
   reading.fulfillmentType === "async" ? "Leitura assíncrona" : `${reading.durationMinutes} minutos`;
